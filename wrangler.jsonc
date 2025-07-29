@@ -17,5 +17,11 @@
   "ai": {
     "binding": "AI"
   },
-  "upload_source_maps": true
+  "upload_source_maps": true,
+  "routes": [
+    {
+      "pattern": "llm.veaix.com",
+      "custom_domain": true
+    }
+  ]
 }
