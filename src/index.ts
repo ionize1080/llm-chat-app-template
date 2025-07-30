@@ -57,6 +57,18 @@ async function handleChatRequest(
   env: Env,
 ): Promise<Response> {
   try {
+    // Block requests from Mainland China (country code CN)
+    const country = (request as any).cf?.country as string | undefined;
+    if (country && country.toUpperCase() === "CN") {
+      return new Response(
+        JSON.stringify({ error: "网站正在建设中" }),
+        {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    }
+
     // Parse JSON request body
     const { messages = [] } = (await request.json()) as {
       messages: ChatMessage[];
