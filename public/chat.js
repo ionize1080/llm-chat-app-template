@@ -13,8 +13,21 @@ const typingIndicator = document.getElementById("typing-indicator");
 /**
  * Render Markdown to HTML using marked if available.
  */
+let markedConfigured = false;
+
 function renderMarkdown(text) {
   if (window.marked) {
+    if (window.hljs && !markedConfigured) {
+      window.marked.setOptions({
+        highlight(code, lang) {
+          if (lang && window.hljs.getLanguage(lang)) {
+            return window.hljs.highlight(code, { language: lang }).value;
+          }
+          return window.hljs.highlightAuto(code).value;
+        },
+      });
+      markedConfigured = true;
+    }
     return window.marked.parse(text);
   }
   const div = document.createElement("div");
