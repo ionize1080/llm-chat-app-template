@@ -61,7 +61,7 @@ async function handleChatRequest(
     const country = (request as any).cf?.country as string | undefined;
     if (country && country.toUpperCase() === "CN") {
       return new Response(
-        JSON.stringify({ error: "网站正在建设中" }),
+        JSON.stringify({ error: "The website is under construction." }),
         {
           status: 403,
           headers: { "content-type": "application/json" },
