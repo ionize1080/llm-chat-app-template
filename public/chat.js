@@ -10,6 +10,18 @@ const userInput = document.getElementById("user-input");
 const sendButton = document.getElementById("send-button");
 const typingIndicator = document.getElementById("typing-indicator");
 
+/**
+ * Render Markdown to HTML using marked if available.
+ */
+function renderMarkdown(text) {
+  if (window.marked) {
+    return window.marked.parse(text);
+  }
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 // Chat state
 let chatHistory = [
   {
@@ -68,7 +80,7 @@ async function sendMessage() {
     // Create new assistant response element
     const assistantMessageEl = document.createElement("div");
     assistantMessageEl.className = "message assistant-message";
-    assistantMessageEl.innerHTML = "<p></p>";
+    assistantMessageEl.innerHTML = "";
     chatMessages.appendChild(assistantMessageEl);
 
     // Scroll to bottom
@@ -113,7 +125,7 @@ async function sendMessage() {
           if (jsonData.response) {
             // Append new content to existing text
             responseText += jsonData.response;
-            assistantMessageEl.querySelector("p").textContent = responseText;
+            assistantMessageEl.innerHTML = renderMarkdown(responseText);
 
             // Scroll to bottom
             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -150,7 +162,13 @@ async function sendMessage() {
 function addMessageToChat(role, content) {
   const messageEl = document.createElement("div");
   messageEl.className = `message ${role}-message`;
-  messageEl.innerHTML = `<p>${content}</p>`;
+  if (role === "assistant") {
+    messageEl.innerHTML = renderMarkdown(content);
+  } else {
+    const p = document.createElement("p");
+    p.textContent = content;
+    messageEl.appendChild(p);
+  }
   chatMessages.appendChild(messageEl);
 
   // Scroll to bottom

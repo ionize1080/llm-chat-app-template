@@ -128,6 +128,19 @@
         display: block;
       }
 
+      pre {
+        background-color: #272822;
+        color: #f8f8f2;
+        padding: 0.5rem;
+        border-radius: 4px;
+        overflow-x: auto;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+      }
+
       footer {
         margin-top: 1rem;
         text-align: center;
@@ -171,6 +184,8 @@
       <p>Cloudflare Workers AI Chat Template &copy; 2025</p>
     </footer>
 
+    <!-- Markdown parser -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- Chat app script -->
     <script src="chat.js"></script>
   </body>

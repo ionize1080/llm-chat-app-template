@@ -23,6 +23,7 @@ This template demonstrates how to build an AI-powered chat interface using Cloud
 - 🛠️ Built with TypeScript and Cloudflare Workers
 - 📱 Mobile-friendly design
 - 🔄 Maintains chat history on the client
+- 📝 Supports Markdown formatting in assistant responses
 <!-- dash-content-end -->
 
 ## Getting Started
