@@ -97,7 +97,14 @@ async function sendMessage() {
       }),
     });
 
-    // Handle errors
+    // Blocked region handling
+    if (response.status === 403) {
+      const data = await response.json().catch(() => ({}));
+      addMessageToChat("assistant", data.error || "网站正在建设中");
+      return;
+    }
+
+    // Handle other errors
     if (!response.ok) {
       throw new Error("Failed to get response");
     }
