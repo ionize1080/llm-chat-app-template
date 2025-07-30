@@ -22,6 +22,17 @@ function renderMarkdown(text) {
   return div.innerHTML;
 }
 
+/**
+ * Highlight all code blocks within an element
+ */
+function highlightCode(el) {
+  if (window.hljs) {
+    el.querySelectorAll("pre code").forEach((block) => {
+      window.hljs.highlightElement(block);
+    });
+  }
+}
+
 // Chat state
 let chatHistory = [
   {
@@ -82,6 +93,7 @@ async function sendMessage() {
     assistantMessageEl.className = "message assistant-message";
     assistantMessageEl.innerHTML = "";
     chatMessages.appendChild(assistantMessageEl);
+    highlightCode(assistantMessageEl);
 
     // Scroll to bottom
     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -133,6 +145,7 @@ async function sendMessage() {
             // Append new content to existing text
             responseText += jsonData.response;
             assistantMessageEl.innerHTML = renderMarkdown(responseText);
+            highlightCode(assistantMessageEl);
 
             // Scroll to bottom
             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -180,4 +193,5 @@ function addMessageToChat(role, content) {
 
   // Scroll to bottom
   chatMessages.scrollTop = chatMessages.scrollHeight;
+  highlightCode(messageEl);
 }

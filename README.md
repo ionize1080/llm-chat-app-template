@@ -24,6 +24,7 @@ This template demonstrates how to build an AI-powered chat interface using Cloud
 - 📱 Mobile-friendly design
 - 🔄 Maintains chat history on the client
 - 📝 Supports Markdown formatting in assistant responses
+- 🎨 Syntax-highlighted code blocks with highlight.js
 <!-- dash-content-end -->
 
 ## Getting Started
