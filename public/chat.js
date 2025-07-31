@@ -38,12 +38,37 @@ function renderMarkdown(text) {
 /**
  * Highlight all code blocks within an element
  */
+function addCopyButtons(el) {
+  el.querySelectorAll("pre").forEach((pre) => {
+    if (pre.querySelector(".copy-btn")) return;
+    const btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.textContent = "Copy";
+    btn.addEventListener("click", () => {
+      const code = pre.querySelector("code");
+      const text = code ? code.innerText : pre.innerText;
+      navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          btn.textContent = "Copied!";
+          setTimeout(() => (btn.textContent = "Copy"), 2000);
+        })
+        .catch(() => {
+          btn.textContent = "Failed";
+          setTimeout(() => (btn.textContent = "Copy"), 2000);
+        });
+    });
+    pre.appendChild(btn);
+  });
+}
+
 function highlightCode(el) {
   if (window.hljs) {
     el.querySelectorAll("pre code").forEach((block) => {
       window.hljs.highlightElement(block);
     });
   }
+  addCopyButtons(el);
 }
 
 // Chat state
