@@ -136,10 +136,29 @@
       }
 
       pre {
+        position: relative;
         padding: 0.5rem;
         border-radius: 4px;
         overflow-x: auto;
         width: 100%;
+      }
+
+      .copy-btn {
+        position: absolute;
+        top: 0.25rem;
+        right: 0.25rem;
+        font-size: 0.75rem;
+        padding: 2px 6px;
+        border: none;
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.4);
+        color: #fff;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .copy-btn:hover {
+        background: rgba(0, 0, 0, 0.6);
       }
 
       code {
