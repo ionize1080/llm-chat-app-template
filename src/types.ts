@@ -29,4 +29,6 @@ export interface ChatMessage {
  */
 export type AiRunParams =
   | { messages: ChatMessage[]; max_tokens: number }
-  | { input: ChatMessage[]; max_tokens: number };
+  | { input: ChatMessage[]; max_tokens: number }
+  | { messages: ChatMessage[]; max_output_tokens: number }
+  | { input: ChatMessage[]; max_output_tokens: number };

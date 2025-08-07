@@ -88,10 +88,11 @@ async function handleChatRequest(
       messages.unshift({ role: "system", content: systemPrompt });
     }
 
-    // Build parameters based on the model. GPT-OSS models expect `input` while
-    // others accept `messages`.
+    // Build parameters based on the model. GPT-OSS models expect `input` and
+    // use `max_output_tokens`, while others accept `messages` with
+    // `max_tokens`.
     const params: AiRunParams = (modelId as string).includes("gpt-oss")
-      ? { input: messages, max_tokens: 1024 }
+      ? { input: messages, max_output_tokens: 1024 }
       : { messages, max_tokens: 1024 };
 
     const response = await env.AI.run(
