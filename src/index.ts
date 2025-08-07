@@ -7,7 +7,7 @@
  *
  * @license MIT
  */
-import { Env, ChatMessage } from "./types";
+import { Env, ChatMessage, AiRunParams } from "./types";
 
 // Default model ID for Workers AI model
 // https://developers.cloudflare.com/workers-ai/models/
@@ -80,17 +80,23 @@ async function handleChatRequest(
       model?: string;
     };
 
+    // Determine the final model ID to use for the request
+    const modelId = (model ?? DEFAULT_MODEL_ID) as keyof AiModels;
+
     // Add system prompt if not present
     if (!messages.some((msg) => msg.role === "system")) {
       messages.unshift({ role: "system", content: systemPrompt });
     }
 
+    // Build parameters based on the model. GPT-OSS models expect `input` while
+    // others accept `messages`.
+    const params: AiRunParams = (modelId as string).includes("gpt-oss")
+      ? { input: messages, max_tokens: 1024 }
+      : { messages, max_tokens: 1024 };
+
     const response = await env.AI.run(
-      model ?? DEFAULT_MODEL_ID,
-      {
-        messages,
-        max_tokens: 1024,
-      },
+      modelId,
+      params,
       {
         returnRawResponse: true,
         // Uncomment to use AI Gateway

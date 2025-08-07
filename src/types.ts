@@ -21,3 +21,12 @@ export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
 }
+
+/**
+ * Parameters for the Workers AI `run` method. Some models expect chat
+ * `messages` while others take an `input` array. Both variants also accept a
+ * `max_tokens` limit.
+ */
+export type AiRunParams =
+  | { messages: ChatMessage[]; max_tokens: number }
+  | { input: ChatMessage[]; max_tokens: number };
