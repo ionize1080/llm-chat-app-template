@@ -9,10 +9,10 @@
  */
 import { Env, ChatMessage } from "./types";
 
-// Model ID for Workers AI model
+// Default model ID for Workers AI model
 // https://developers.cloudflare.com/workers-ai/models/
-//const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-const MODEL_ID = "@cf/openai/gpt-oss-120b";
+//const DEFAULT_MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+const DEFAULT_MODEL_ID = "@cf/openai/gpt-oss-120b";
 
 // Default system prompt
 const DEFAULT_SYSTEM_PROMPT =
@@ -75,8 +75,9 @@ async function handleChatRequest(
     }
 
     // Parse JSON request body
-    const { messages = [] } = (await request.json()) as {
+    const { messages = [], model } = (await request.json()) as {
       messages: ChatMessage[];
+      model?: string;
     };
 
     // Add system prompt if not present
@@ -85,7 +86,7 @@ async function handleChatRequest(
     }
 
     const response = await env.AI.run(
-      MODEL_ID,
+      model ?? DEFAULT_MODEL_ID,
       {
         messages,
         max_tokens: 1024,
