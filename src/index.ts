@@ -114,6 +114,7 @@ async function handleChatRequest(
     // Return streaming response
    // return response;
   return Response.json(response);
+  console.error("111",Response.json(response));
   } catch (error) {
     console.error("Error processing chat request:", error);
     return new Response(
