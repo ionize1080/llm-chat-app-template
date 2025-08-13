@@ -100,7 +100,7 @@ async function handleChatRequest(
       modelId,
       params,
       {
-        //stream: true,            // 开启流式输出
+        stream: true,            // 开启流式输出
         returnRawResponse: true,
         // Uncomment to use AI Gateway
         // gateway: {
