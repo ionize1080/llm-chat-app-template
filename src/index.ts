@@ -61,59 +61,63 @@ async function handleChatRequest(
 ): Promise<Response> {
   try {
     let systemPrompt = DEFAULT_SYSTEM_PROMPT;
-    // Handle requests from Mainland China (country code CN)
     const country = (request as any).cf?.country as string | undefined;
     if (country && country.toUpperCase() === "CN") {
       systemPrompt = CN_SYSTEM_PROMPT;
     }
 
-    // Parse JSON request body
     const { messages = [], model } = (await request.json()) as {
       messages: ChatMessage[];
       model?: string;
     };
 
-    // Determine the final model ID to use for the request
     const modelId = (model ?? DEFAULT_MODEL_ID) as keyof AiModels;
 
-    // Add system prompt if not present
     if (!messages.some((msg) => msg.role === "system")) {
       messages.unshift({ role: "system", content: systemPrompt });
     }
 
-    // Check if it's an OpenAI GPT-OSS model
     const isGptOss = (modelId as string).includes("gpt-oss");
+    
+    const aiParams: AiRunParams = isGptOss
+      ? { input: messages, max_output_tokens: 1024 }
+      : { messages, max_tokens: 1024 };
 
-    let params: AiRunParams;
-
-    if (isGptOss) {
-      // For GPT-OSS models, use the format with the `input` parameter,
-      // passing the entire message history.
-      params = {
-        input: messages,
-        max_output_tokens: 1024, // GPT-OSS models might use 'max_output_tokens'
-      };
-      console.log("GPT-OSS Request params:", JSON.stringify(params));
-    } else {
-      // For other models (Llama, DeepSeek, etc.), use the standard format
-      params = {
-        messages,
-        max_tokens: 1024,
-      };
-      console.log("Standard Request params:", JSON.stringify(params));
-    }
-
-    const response = await env.AI.run(
+    const aiResponse = await env.AI.run(
       modelId,
-      params,
-      {
-        stream: true,
-        returnRawResponse: true,
-      },
+      { ...aiParams, stream: true },
+      { returnRawResponse: true },
     ) as Response;
 
-    // Return streaming response
-    return response;
+    // Create a transform stream to ensure SSE format
+    const { readable, writable } = new TransformStream({
+      transform(chunk, controller) {
+        const text = new TextDecoder().decode(chunk);
+        // Split the chunk by newlines in case multiple events are in one chunk
+        const lines = text.split("\n");
+        for (const line of lines) {
+          if (line.trim().startsWith("data:")) {
+            // If it's already in SSE format, just pass it through
+            controller.enqueue(new TextEncoder().encode(line.trim() + "\n\n"));
+          } else if (line.trim()) {
+            // If it's a raw JSON object, wrap it in the SSE format
+            controller.enqueue(new TextEncoder().encode(`data: ${line.trim()}\n\n`));
+          }
+        }
+      },
+    });
+
+    // Pipe the AI response through our transformer
+    aiResponse.body?.pipeTo(writable);
+
+    // Return the transformed stream to the client
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      },
+    });
 
   } catch (error) {
     console.error("Error processing chat request:", error);
