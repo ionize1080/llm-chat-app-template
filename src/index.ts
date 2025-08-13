@@ -61,7 +61,7 @@ async function handleChatRequest(
 ): Promise<Response> {
   try {
     let systemPrompt = DEFAULT_SYSTEM_PROMPT;
-    // Block requests from Mainland China (country code CN)
+    // Handle requests from Mainland China (country code CN)
     const country = (request as any).cf?.country as string | undefined;
     if (country && country.toUpperCase() === "CN") {
       systemPrompt = CN_SYSTEM_PROMPT;
@@ -84,48 +84,34 @@ async function handleChatRequest(
     // Check if it's an OpenAI GPT-OSS model
     const isGptOss = (modelId as string).includes("gpt-oss");
 
-    let response: Response;
+    let params: AiRunParams;
 
     if (isGptOss) {
-      // For GPT-OSS models, use the special format with input parameter
-      // Extract the last user message for simple queries
-      const lastUserMessage = messages.filter(msg => msg.role === "user").pop();
-      const instructions = messages.find(msg => msg.role === "system")?.content || systemPrompt;
-      
-      // Build the correct format for GPT-OSS models
-      const params = {
-        instructions: instructions,
-        input: lastUserMessage?.content || "Hello",
+      // For GPT-OSS models, use the format with the `input` parameter,
+      // passing the entire message history.
+      params = {
+        input: messages,
+        max_output_tokens: 1024, // GPT-OSS models might use 'max_output_tokens'
       };
-
-      console.log("GPT-OSS Request params:", params);
-
-      response = await env.AI.run(
-        modelId,
-        params,
-        {
-          stream: true,
-          returnRawResponse: true,
-        },
-      ) as Response;
-
+      console.log("GPT-OSS Request params:", JSON.stringify(params));
     } else {
       // For other models (Llama, DeepSeek, etc.), use the standard format
-      const params = {
+      params = {
         messages,
         max_tokens: 1024,
       };
-
-      response = await env.AI.run(
-        modelId,
-        params,
-        {
-          stream: true,
-          returnRawResponse: true,
-        },
-      ) as Response;
+      console.log("Standard Request params:", JSON.stringify(params));
     }
-    
+
+    const response = await env.AI.run(
+      modelId,
+      params,
+      {
+        stream: true,
+        returnRawResponse: true,
+      },
+    ) as Response;
+
     // Return streaming response
     return response;
 
