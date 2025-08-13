@@ -94,10 +94,18 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
 
         // 若本身就是 SSE（含 data:），直接按行处理，提取/转换
         const lines = text.split("\n");
-        for (let line of lines) {
-          if (!line.trim()) continue;
+        for (let rawLine of lines) {
+          const line = rawLine.trim();
+          if (!line) continue;
+          if (
+            line.startsWith("event:") ||
+            line.startsWith("id:") ||
+            line.startsWith("retry:")
+          ) {
+            continue;
+          }
 
-          if (line.trim().startsWith("data:")) {
+          if (line.startsWith("data:")) {
             const jsonStr = line.replace(/^data:\s*/, "").trim();
             if (!jsonStr || jsonStr === "[DONE]") continue;
 
@@ -110,22 +118,20 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
               }
             } catch {
               // 不是 JSON，就按纯文本包装
-              const out = `data: ${JSON.stringify({ response: line.trim() })}\n\n`;
+              const out = `data: ${JSON.stringify({ response: line })}\n\n`;
               controller.enqueue(new TextEncoder().encode(out));
             }
           } else {
             // 非 SSE 行：可能是原始 JSON/纯文本
-            const raw = line.trim();
-            if (!raw) continue;
             try {
-              const obj = JSON.parse(raw);
+              const obj = JSON.parse(line);
               const piece = normalizeChunkToText(obj);
               if (piece) {
                 const out = `data: ${JSON.stringify({ response: piece })}\n\n`;
                 controller.enqueue(new TextEncoder().encode(out));
               }
             } catch {
-              const out = `data: ${JSON.stringify({ response: raw })}\n\n`;
+              const out = `data: ${JSON.stringify({ response: line })}\n\n`;
               controller.enqueue(new TextEncoder().encode(out));
             }
           }
