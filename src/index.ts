@@ -92,7 +92,8 @@ async function handleChatRequest(
     // use `max_output_tokens`, while others accept `messages` with
     // `max_tokens`.
     const params: AiRunParams = (modelId as string).includes("gpt-oss")
-      ? { input: messages, max_output_tokens: 1024 }
+      //? { input: messages, max_output_tokens: 1024 }
+      ? { instructions: 'You are a concise.', input: 'What is the origin of the phrase Hello, World?',}
       : { messages, max_tokens: 1024 };
 
     const response = await env.AI.run(
