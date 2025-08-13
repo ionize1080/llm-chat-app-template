@@ -91,7 +91,7 @@ async function handleChatRequest(
     // Build parameters based on the model. GPT-OSS models expect `input` and
     // use `max_output_tokens`, while others accept `messages` with
     // `max_tokens`.
-    const params: AiRunParams = (modelId as string).includes("gpt-oss")
+    const params: AiRunParams = (modelId as string).includes("gpt-osss")
       ? { input: messages, max_output_tokens: 1024 }
       : { messages, max_tokens: 1024 };
 
