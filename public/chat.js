@@ -176,10 +176,19 @@ async function sendMessage() {
       // Decode chunk
       const chunk = decoder.decode(value, { stream: true });
 
-      // Process SSE format
+      // Process Server-Sent Event format lines
       const lines = chunk.split("\n");
-      for (const line of lines) {
+      for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
+
+        // Remove the `data:` prefix used in SSE streams
+        if (line.startsWith("data:")) {
+          line = line.replace(/^data:\s*/, "");
+        }
+
         try {
+          // Now we can safely parse the JSON content
           const jsonData = JSON.parse(line);
           if (jsonData.response) {
             // Append new content to existing text
@@ -191,7 +200,8 @@ async function sendMessage() {
             chatMessages.scrollTop = chatMessages.scrollHeight;
           }
         } catch (e) {
-          console.error("Error parsing JSON:", e);
+          // This might happen if a line is not valid JSON, we can safely ignore it
+          console.error("Error parsing JSON line:", line, e);
         }
       }
     }
