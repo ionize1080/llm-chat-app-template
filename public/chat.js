@@ -168,40 +168,49 @@ async function sendMessage() {
 
     while (true) {
       const { done, value } = await reader.read();
-
       if (done) {
         break;
       }
 
-      // Decode chunk
       const chunk = decoder.decode(value, { stream: true });
-
-      // Process Server-Sent Event format lines
       const lines = chunk.split("\n");
-      for (let line of lines) {
-        line = line.trim();
-        if (!line) continue;
 
-        // Remove the `data:` prefix used in SSE streams
-        if (line.startsWith("data:")) {
-          line = line.replace(/^data:\s*/, "");
-        }
-
-        try {
-          // Now we can safely parse the JSON content
-          const jsonData = JSON.parse(line);
-          if (jsonData.response) {
-            // Append new content to existing text
-            responseText += jsonData.response;
-            assistantMessageEl.innerHTML = renderMarkdown(responseText);
-            highlightCode(assistantMessageEl);
-
-            // Scroll to bottom
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+      for (const line of lines) {
+        // Find lines that start with "data:", which is the SSE format
+        if (line.trim().startsWith("data:")) {
+          // Get the JSON string by removing "data:"
+          const jsonStr = line.replace(/^data:\s*/, '');
+          
+          // Some streams might send a special [DONE] message
+          if (jsonStr === '[DONE]') {
+            break;
           }
-        } catch (e) {
-          // This might happen if a line is not valid JSON, we can safely ignore it
-          console.error("Error parsing JSON line:", line, e);
+
+          try {
+            const jsonData = JSON.parse(jsonStr);
+            let content = '';
+
+            // **THIS IS THE KEY FIX**
+            // Check for the standard format (Llama, Deepseek, etc.)
+            if (jsonData.response) {
+              content = jsonData.response;
+            } 
+            // Check for the OpenAI-compatible format
+            else if (jsonData.choices && jsonData.choices[0]?.delta?.content) {
+              content = jsonData.choices[0].delta.content;
+            }
+
+            // If we found content, append it and update the UI
+            if (content) {
+              responseText += content;
+              assistantMessageEl.innerHTML = renderMarkdown(responseText);
+              highlightCode(assistantMessageEl);
+              chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+          } catch (e) {
+            // Log errors but don't break the loop, as some lines might be empty
+            console.error("Could not parse JSON chunk:", jsonStr, e);
+          }
         }
       }
     }
