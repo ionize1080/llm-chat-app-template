@@ -176,9 +176,17 @@ async function sendMessage() {
       // Decode chunk
       const chunk = decoder.decode(value, { stream: true });
 
-      // Process SSE format
+      // Process Server-Sent Event format lines
       const lines = chunk.split("\n");
-      for (const line of lines) {
+      for (let line of lines) {
+        line = line.trim();
+        if (!line) continue;
+
+        // Remove the `data:` prefix used in SSE streams
+        if (line.startsWith("data:")) {
+          line = line.replace(/^data:\s*/, "");
+        }
+
         try {
           const jsonData = JSON.parse(line);
           if (jsonData.response) {
