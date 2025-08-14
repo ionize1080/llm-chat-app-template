@@ -1,7 +1,9 @@
 {
   "ExpandedNodes": [
-    ""
+    "",
+    "\\public",
+    "\\src"
   ],
-  "SelectedNode": "\\C:\\Users\\haowe\\source\\repos\\ionize1080\\llm-chat-app-template",
+  "SelectedNode": "\\src\\index.ts",
   "PreviewInSolutionExplorer": false
 }
