@@ -61,13 +61,13 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
             aiParams = {
                 instructions: systemPrompt,
                 input: lastUser?.content ?? "Hello",
-                max_output_tokens: 1024,
+                max_output_tokens: 2048,
                 stream: true,
             };
         } else {
             aiParams = {
                 messages,
-                max_tokens: 1024,
+                max_tokens: 2048,
                 stream: true,
             } as AiRunParams;
         }
