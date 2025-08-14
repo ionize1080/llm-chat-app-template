@@ -145,15 +145,17 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
 
 // --- 修正部分：增强的文本提取和标准化 ---
 function normalizeChunkToText(obj: any): string {
+  // Only extract actual text content, not field names like "delta" or "added"
   if (typeof obj?.response === "string") return obj.response;
 
-  // 新增对您日志中格式的支持
+  // Support for other model formats
   if (typeof obj?.part?.text === 'string') return obj.part.text;
   if (typeof obj?.item?.content?.[0]?.text === 'string') return obj.item.content[0].text;
 
+  // OpenAI streaming: { choices: [ { delta: { content: "..." } } ] }
   const ch = obj?.choices?.[0];
-  if (ch?.delta?.content !== undefined) {
-    return extractTextFromDeltaContent(ch.delta.content);
+  if (ch?.delta?.content !== undefined && typeof ch.delta.content === "string") {
+    return ch.delta.content;
   }
   if (typeof ch?.text === "string") return ch.text;
   if (typeof ch?.message?.content === "string") return ch.message.content;
@@ -161,16 +163,8 @@ function normalizeChunkToText(obj: any): string {
   return "";
 }
 
+// Remove recursion and only extract string content
 function extractTextFromDeltaContent(content: any): string {
-  if (content == null) return "";
   if (typeof content === "string") return content;
-
-  if (typeof content.value === "string") return content.value;
-  if (typeof content.text === "string")  return content.text;
-  if (typeof content.content === "string") return content.content;
-
-  if (Array.isArray(content)) {
-    return content.map(extractTextFromDeltaContent).join("");
-  }
   return "";
 }
