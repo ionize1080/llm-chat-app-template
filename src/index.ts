@@ -1,9 +1,8 @@
 /**
- * Cloudflare Worker backend (fixed v4)
- * - 统一将上游 SSE 解析并转为 {response:"..."} 的 SSE 片段
- * - 过滤 reasoning 事件（response.reasoning*）
- * - 不再丢弃 completed；由前端判断“更长则替换”避免重复
- * - 系统提示鼓励仅返回最终答案，最好包在 <final>…</final>
+ * Cloudflare Worker backend
+ * - /api/chat      ：规范化 SSE（按你之前的逻辑，便于统一前端解析）
+ * - /api/chat/raw  ：直接返回上游原始 SSE（真正未经我们处理的 event/data/[DONE]）
+ * 两个端点都复用相同的参数构造逻辑（系统提示注入、gpt-oss与chat的参数差异）
  */
 
 interface Env {
@@ -26,57 +25,57 @@ export default {
             return env.ASSETS.fetch(request);
         }
 
-        if (url.pathname === "/api/chat") {
-            if (request.method === "POST") {
-                return handleChatRequest(request, env);
-            }
-            return new Response("Method not allowed", { status: 405 });
+        if (request.method === "POST" && url.pathname === "/api/chat") {
+            return handleChatNormalized(request, env);
+        }
+
+        if (request.method === "POST" && url.pathname === "/api/chat/raw") {
+            return handleChatRaw(request, env);
         }
 
         return new Response("Not found", { status: 404 });
     },
 };
 
-async function handleChatRequest(request: Request, env: Env): Promise<Response> {
-    try {
-        let systemPrompt = DEFAULT_SYSTEM_PROMPT;
+// ---------- 公共：构造参数 ----------
+async function buildParamsFromRequest(request: Request) {
+    const { messages = [], model } = (await request.json()) as {
+        messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+        model?: string;
+    };
+    const modelId = (model ?? DEFAULT_MODEL_ID);
+    const finalMessages = [...messages];
 
-        const { messages = [], model } = (await request.json()) as {
-            messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
-            model?: string;
+    if (!finalMessages.some((m) => m.role === "system")) {
+        finalMessages.unshift({ role: "system", content: DEFAULT_SYSTEM_PROMPT });
+    }
+
+    const isGptOss = String(modelId).includes("gpt-oss");
+
+    let aiParams: any;
+    if (isGptOss) {
+        const lastUser = [...finalMessages].reverse().find((m) => m.role === "user");
+        aiParams = {
+            instructions: DEFAULT_SYSTEM_PROMPT,
+            input: lastUser?.content ?? "Hello",
+            max_output_tokens: 1024,
+            stream: true,
         };
+    } else {
+        aiParams = {
+            messages: finalMessages,
+            max_tokens: 1024,
+            stream: true,
+        };
+    }
+    return { modelId, aiParams };
+}
 
-        const modelId = (model ?? DEFAULT_MODEL_ID);
-
-        if (!messages.some((m) => m.role === "system")) {
-            messages.unshift({ role: "system", content: systemPrompt });
-        }
-
-        const isGptOss = String(modelId).includes("gpt-oss");
-
-        let aiParams: any;
-
-        if (isGptOss) {
-            const lastUser = [...messages].reverse().find((m) => m.role === "user");
-            aiParams = {
-                instructions: systemPrompt,
-                input: lastUser?.content ?? "Hello",
-                max_output_tokens: 1024,
-                stream: true,
-            };
-        } else {
-            aiParams = {
-                messages,
-                max_tokens: 1024,
-                stream: true,
-            };
-        }
-
-        const aiResponse = await env.AI.run(
-            modelId,
-            aiParams,
-            { returnRawResponse: true, stream: true },
-        ) as Response;
+// ---------- 规范化 SSE：/api/chat ----------
+async function handleChatNormalized(request: Request, env: Env): Promise<Response> {
+    try {
+        const { modelId, aiParams } = await buildParamsFromRequest(request);
+        const aiResponse = await env.AI.run(modelId, aiParams, { returnRawResponse: true, stream: true }) as Response;
 
         let sseBuffer = "";
 
@@ -85,7 +84,6 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
                 const text = new TextDecoder().decode(chunk);
                 sseBuffer += text;
 
-                // 以空行分割上游 SSE 事件
                 const events = sseBuffer.split("\n\n");
                 sseBuffer = events.pop() || "";
 
@@ -93,23 +91,16 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
                     const lines = evt.split("\n");
                     for (const rawLine of lines) {
                         const line = rawLine.trim();
-                        if (!line) continue;
-                        if (!line.startsWith("data:")) continue;
+                        if (!line || !line.startsWith("data:")) continue;
 
                         const jsonStr = line.replace(/^data:\s*/, "").trim();
                         if (!jsonStr || jsonStr === "[DONE]") continue;
 
                         let obj: any;
-                        try {
-                            obj = JSON.parse(jsonStr);
-                        } catch {
-                            continue;
-                        }
+                        try { obj = JSON.parse(jsonStr); } catch { continue; }
 
-                        // 丢弃 reasoning 事件（如存在）
-                        if (obj?.type && String(obj.type).startsWith("response.reasoning")) {
-                            continue;
-                        }
+                        // 这里保留展示友好的策略：不转发 reasoning 事件
+                        if (obj?.type && String(obj.type).startsWith("response.reasoning")) continue;
 
                         const piece = normalizeChunkToText(obj);
                         if (piece) {
@@ -120,7 +111,6 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
                 }
             },
             flush(controller) {
-                // 处理尾包：有时最后一个事件没有以空行结尾
                 if (!sseBuffer) return;
                 const lines = sseBuffer.split("\n");
                 for (const rawLine of lines) {
@@ -152,7 +142,7 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
             },
         });
     } catch (error) {
-        console.error("Error processing chat request:", error);
+        console.error("Error /api/chat:", error);
         return new Response(JSON.stringify({ error: "Failed to process request" }), {
             status: 500,
             headers: { "content-type": "application/json" },
@@ -160,16 +150,34 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
     }
 }
 
+// ---------- 原始 SSE 直通：/api/chat/raw ----------
+async function handleChatRaw(request: Request, env: Env): Promise<Response> {
+    try {
+        const { modelId, aiParams } = await buildParamsFromRequest(request);
+        // 直接返回上游原始流（包含 event:/data:/[DONE] 等）
+        const aiResponse = await env.AI.run(modelId, aiParams, { returnRawResponse: true, stream: true }) as Response;
+        // 原样透传，不做 Transform；保留上游 headers
+        return aiResponse;
+    } catch (error) {
+        console.error("Error /api/chat/raw:", error);
+        return new Response(JSON.stringify({ error: "Failed to process request" }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+        });
+    }
+}
+
+// ---------- 从各种事件里提取可读文本 ----------
 function normalizeChunkToText(obj: any): string {
     // Workers 原生统一流：{response:"..."}
     if (typeof obj?.response === "string") return obj.response;
 
-    // OpenAI Responses 增量
+    // OpenAI Responses：增量
     if (obj?.type === "response.output_text.delta" && typeof obj?.delta === "string") {
         return obj.delta;
     }
 
-    // OpenAI Responses 完成：从 response.output[*] 提取文本
+    // OpenAI Responses：完成，提取 response.output[*]
     if (obj?.type === "response.completed") {
         const out = obj?.response?.output;
         if (Array.isArray(out)) {
@@ -187,7 +195,7 @@ function normalizeChunkToText(obj: any): string {
         }
     }
 
-    // OpenAI Chat Completions 流
+    // Chat Completions
     const ch = obj?.choices?.[0];
     if (ch?.delta?.content !== undefined) {
         const content = ch.delta.content;
@@ -201,7 +209,7 @@ function normalizeChunkToText(obj: any): string {
     if (typeof ch?.text === "string") return ch.text;
     if (typeof ch?.message?.content === "string") return ch.message.content;
 
-    // 其它兼容
+    // 其它见过的形态
     if (typeof obj?.part?.text === "string") return obj.part.text;
     if (typeof obj?.item?.content?.[0]?.text === "string") return obj.item.content[0].text;
 
