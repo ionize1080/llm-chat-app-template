@@ -42,8 +42,7 @@
               "RelativeToolTip": "public\\chat.js",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAOoAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001646|",
-              "WhenOpened": "2025-08-14T04:02:41.407Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-08-14T04:02:41.407Z"
             },
             {
               "$type": "Document",
@@ -55,8 +54,7 @@
               "RelativeToolTip": "public\\index.html",
               "ViewState": "AgIAAOcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001512|",
-              "WhenOpened": "2025-08-14T03:53:51.603Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-08-14T03:53:51.603Z"
             },
             {
               "$type": "Document",
@@ -66,7 +64,7 @@
               "RelativeDocumentMoniker": "src\\index.ts",
               "ToolTip": "C:\\Users\\haowe\\source\\repos\\ionize1080\\llm-chat-app-template\\src\\index.ts",
               "RelativeToolTip": "src\\index.ts",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAANMAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAACcAAAAAAAAAAAAAAEUAAAAgAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
               "WhenOpened": "2025-08-14T02:32:22.878Z",
               "EditorCaption": ""

@@ -1,9 +1,14 @@
 /**
- * LLM Chat App Frontend (fixed)
+ * LLM Chat App Frontend (fixed v3)
  * 兼容三类流式返回：
  * 1) Workers AI/常规模型：{ "response": "..." }
  * 2) OpenAI Chat Completions：data: {"choices":[{"delta":{"content": "..."}}]}
  * 3) OpenAI Responses：data: {"type":"response.output_text.delta","delta":"..."} ... "response.completed"
+ *
+ * 额外处理：
+ * - 过滤 reasoning 事件（response.reasoning*）
+ * - 如果已经收到过增量 delta，则跳过 completed 的全文兜底，避免重复
+ * - 仅渲染 <final>…</final> 中的内容（若存在），其余当作思考/旁白忽略
  */
 
 // DOM elements
@@ -17,35 +22,41 @@ let isProcessing = false;
 const chatHistory = [];
 
 // Auto-resize textarea
-userInput.addEventListener("input", () => {
-    userInput.style.height = "auto";
-    userInput.style.height = Math.min(userInput.scrollHeight, 200) + "px";
-});
+if (userInput) {
+    userInput.addEventListener("input", () => {
+        userInput.style.height = "auto";
+        userInput.style.height = Math.min(userInput.scrollHeight, 200) + "px";
+    });
 
-// Send with Enter (Shift+Enter for newline)
-userInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
+    // Send with Enter (Shift+Enter for newline)
+    userInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+}
+
+if (sendButton) {
+    sendButton.addEventListener("click", () => {
         sendMessage();
-    }
-});
-
-sendButton.addEventListener("click", () => {
-    sendMessage();
-});
+    });
+}
 
 async function sendMessage() {
-    const message = userInput.value.trim();
+    const message = (userInput?.value || "").trim();
     if (message === "" || isProcessing) return;
 
     isProcessing = true;
-    userInput.disabled = true;
-    sendButton.disabled = true;
+    if (userInput) userInput.disabled = true;
+    if (sendButton) sendButton.disabled = true;
 
     addMessageToChat("user", message);
-    userInput.value = "";
-    userInput.style.height = "auto";
-    typingIndicator.classList.add("visible");
+    if (userInput) {
+        userInput.value = "";
+        userInput.style.height = "auto";
+    }
+    if (typingIndicator) typingIndicator.classList.add("visible");
 
     chatHistory.push({ role: "user", content: message });
 
@@ -62,7 +73,7 @@ async function sendMessage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 messages: chatHistory,
-                model: modelSelect.value,
+                model: modelSelect ? modelSelect.value : undefined,
             }),
         });
 
@@ -79,6 +90,7 @@ async function sendMessage() {
         const decoder = new TextDecoder();
         let responseText = "";
         let sseBuffer = "";
+        let sawOutputTextDelta = false;
 
         while (true) {
             const { done, value } = await reader.read();
@@ -92,38 +104,57 @@ async function sendMessage() {
             for (const evt of events) {
                 // 一个事件内部可能有多行：event:/id:/retry:/data:
                 const lines = evt.split("\n");
-                for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (!trimmed) continue;
-                    if (!trimmed.startsWith("data:")) continue;
-                    const jsonStr = trimmed.replace(/^data:\s*/, "").trim();
+                for (const rawLine of lines) {
+                    const line = rawLine.trim();
+                    if (!line) continue;
+                    if (!line.startsWith("data:")) continue;
+                    const jsonStr = line.replace(/^data:\s*/, "").trim();
                     if (!jsonStr || jsonStr === "[DONE]") continue;
+                    let jsonData;
                     try {
-                        const jsonData = JSON.parse(jsonStr);
-                        const piece = pickChunkText(jsonData);
-                        if (piece) {
-                            responseText += piece;
-                            assistantMessageEl.innerHTML = renderMarkdown(responseText);
-                            highlightCode(assistantMessageEl);
-                            chatMessages.scrollTop = chatMessages.scrollHeight;
-                        }
+                        jsonData = JSON.parse(jsonStr);
                     } catch {
-                        // 忽略解析失败的 data 行
+                        continue;
+                    }
+
+                    // —— 过滤 reasoning 事件 —— 
+                    if (jsonData?.type && String(jsonData.type).startsWith("response.reasoning")) {
+                        continue;
+                    }
+
+                    // 标记是否出现过增量文本
+                    if (jsonData?.type === "response.output_text.delta" && typeof jsonData?.delta === "string" && jsonData.delta.length) {
+                        sawOutputTextDelta = true;
+                    }
+
+                    // 若已经出现过增量文本，则跳过 completed 里的最终全文兜底，避免重复
+                    if (jsonData?.type === "response.completed" && sawOutputTextDelta) {
+                        continue;
+                    }
+
+                    const piece = pickChunkText(jsonData);
+                    if (piece) {
+                        responseText += piece;
+                        assistantMessageEl.innerHTML = renderMarkdown(visibleTextFrom(responseText));
+                        highlightCode(assistantMessageEl);
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
                     }
                 }
             }
         }
 
-        chatHistory.push({ role: "assistant", content: responseText });
+        chatHistory.push({ role: "assistant", content: visibleTextFrom(responseText) });
     } catch (err) {
         console.error(err);
         addMessageToChat("assistant", "Sorry, there was an error processing your request.");
     } finally {
-        typingIndicator.classList.remove("visible");
+        if (typingIndicator) typingIndicator.classList.remove("visible");
         isProcessing = false;
-        userInput.disabled = false;
-        sendButton.disabled = false;
-        userInput.focus();
+        if (userInput) {
+            userInput.disabled = false;
+            userInput.focus();
+        }
+        if (sendButton) sendButton.disabled = false;
     }
 }
 
@@ -138,6 +169,7 @@ function pickChunkText(jsonData) {
         return jsonData.delta;
     }
     if (jsonData?.type === "response.completed") {
+        // 兜底提取：如果前面没有 delta，也能得到最终文本
         const out = jsonData?.response?.output;
         if (Array.isArray(out)) {
             const texts = [];
@@ -159,7 +191,6 @@ function pickChunkText(jsonData) {
     if (ch?.delta?.content !== undefined) {
         const content = ch.delta.content;
         if (typeof content === "string") return content;
-        // 有些实现把对象塞进 content，尝试提取常见字段
         if (content && typeof content === "object") {
             if (typeof content?.text === "string") return content.text;
             if (typeof content?.data?.text === "string") return content.data.text;
@@ -170,13 +201,20 @@ function pickChunkText(jsonData) {
     if (typeof ch?.message?.content === "string") return ch.message.content;
 
     // 4) 其它见过的形态
-    if (typeof jsonData?.part?.text === 'string') return jsonData.part.text;
-    if (typeof jsonData?.item?.content?.[0]?.text === 'string') return jsonData.item.content[0].text;
+    if (typeof jsonData?.part?.text === "string") return jsonData.part.text;
+    if (typeof jsonData?.item?.content?.[0]?.text === "string") return jsonData.item.content[0].text;
 
     return "";
 }
 
-// ========== 辅助 UI ==========
+// 只渲染 <final>…</final> 中的内容（若存在）；否则原样返回
+function visibleTextFrom(raw) {
+    if (!raw) return "";
+    const m = raw.match(/<final>([\s\S]*?)<\/final>/i);
+    return m ? m[1] : raw;
+}
+
+// ========== UI helpers ==========
 
 function addMessageToChat(role, content) {
     const messageEl = document.createElement("div");
