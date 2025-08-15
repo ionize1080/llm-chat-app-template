@@ -169,15 +169,16 @@ async function sendMessage() {
             }
         }
 
-        // —— 完成后兜底：若只剩 …，回退到原文或提示 —— //
-        let finalToShow = (seenFinalOpen ? visibleTextFrom(responseText) : responseText || "").trim();
-        if (finalToShow === "..." || finalToShow === "…") {
-            finalToShow = (responseText || "").trim();
-            if (finalToShow === "..." || finalToShow === "…") {
-                finalToShow = "这次生成出了点问题，请重试或换个问法。";
-            }
-            assistantMessageEl.innerHTML = renderMarkdown(finalToShow);
+        // —— 完成后：无论是否见到 <final>，都进行一次最终渲染 —— //
+        let finalToShow = seenFinalOpen ? visibleTextFrom(responseText) : (responseText || "");
+        finalToShow = (finalToShow || "").trim();
+
+        if (!finalToShow || finalToShow === "..." || finalToShow === "…") {
+            finalToShow = "这次生成出了点问题，请重试或换个问法。";
         }
+
+        assistantMessageEl.innerHTML = renderMarkdown(finalToShow);
+        highlightCode(assistantMessageEl);
 
         // 原始SSE复制/下载条
         if (captureRawSSE && rawBlocks.length) {
