@@ -56,13 +56,13 @@ async function buildParamsFromRequest(request: Request) {
         aiParams = {
             instructions: DEFAULT_SYSTEM_PROMPT,
             input: lastUser?.content ?? "Hello",
-            max_output_tokens: 1024,
+            max_output_tokens: 4096,
             stream: true,
         };
     } else {
         aiParams = {
             messages: finalMessages,
-            max_tokens: 1024,
+            max_tokens: 4096,
             stream: true,
         };
     }
