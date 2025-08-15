@@ -1,6 +1,6 @@
 /**
  * Cloudflare Worker backend
- * - /api/chat      ：规范化 SSE（过滤推理事件；见到 <final> 前过滤常见自述/占位）
+ * - /api/chat      ：规范化 SSE（过滤推理事件；在见到 <final> 前过滤常见自述/占位）
  * - /api/chat/raw  ：上游原始 SSE 直通（保留 event:/data:/[DONE]）
  */
 
@@ -56,13 +56,13 @@ async function buildParamsFromRequest(request: Request) {
         aiParams = {
             instructions: DEFAULT_SYSTEM_PROMPT,
             input: lastUser?.content ?? "Hello",
-            max_output_tokens: 4096,
+            max_output_tokens: 2048,
             stream: true,
         };
     } else {
         aiParams = {
             messages: finalMessages,
-            max_tokens: 4096,
+            max_tokens: 2048,
             stream: true,
         };
     }
@@ -107,7 +107,6 @@ async function handleChatNormalized(request: Request, env: Env): Promise<Respons
                         if (!piece) continue;
 
                         // —— <final> 之前的轻量过滤：自述/占位 —— //
-                        // 更新检测窗口
                         preFinalTail = (preFinalTail + piece).slice(-MAX_TAIL);
                         if (!seenFinalOpen && preFinalTail.includes("<final>")) {
                             seenFinalOpen = true;

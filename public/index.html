@@ -120,7 +120,8 @@
             padding: 0.75rem;
             border-radius: 8px;
             max-width: 95%;
-            overflow-wrap: anywhere;
+            overflow-wrap: break-word;
+            word-break: break-word;
             font-size: 0.9rem;
         }
 
@@ -216,7 +217,104 @@
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
         }
 
-        /* 原始 SSE 复制条 */
+        /* ===== Markdown 排版优化（仅 assistant 区域）===== */
+        .assistant-message {
+            line-height: 1.75;
+        }
+
+            .assistant-message :is(p, ul, ol, pre, blockquote, table) {
+                margin: 0.6rem 0;
+            }
+
+            .assistant-message h1 {
+                font-size: 1.15rem;
+                font-weight: 700;
+                margin: 0.8rem 0 0.5rem;
+            }
+
+            .assistant-message h2 {
+                font-size: 1.05rem;
+                font-weight: 700;
+                margin: 0.75rem 0 0.5rem;
+            }
+
+            .assistant-message h3 {
+                font-size: 1rem;
+                font-weight: 700;
+                margin: 0.7rem 0 0.45rem;
+            }
+
+            .assistant-message h4 {
+                font-size: 0.95rem;
+                font-weight: 700;
+                margin: 0.6rem 0 0.4rem;
+            }
+
+            .assistant-message ul, .assistant-message ol {
+                padding-left: 1.25rem;
+                list-style-position: outside;
+            }
+
+            .assistant-message ul {
+                list-style-type: disc;
+            }
+
+            .assistant-message ol {
+                list-style-type: decimal;
+            }
+
+            .assistant-message li + li {
+                margin-top: 0.25rem;
+            }
+
+            .assistant-message li > ul, .assistant-message li > ol {
+                margin-top: 0.25rem;
+            }
+
+            .assistant-message blockquote {
+                padding: 0.5rem 0.75rem;
+                border-left: 3px solid #e5e7eb;
+                background: #f9fafb;
+                color: #4b5563;
+                border-radius: 4px;
+            }
+
+            .assistant-message table {
+                width: 100%;
+                border-collapse: collapse;
+                overflow: hidden;
+                border: 1px solid var(--border-color);
+                border-radius: 6px;
+            }
+
+            .assistant-message th, .assistant-message td {
+                border: 1px solid var(--border-color);
+                padding: 6px 10px;
+                text-align: left;
+                vertical-align: top;
+            }
+
+            .assistant-message thead th {
+                background: #f3f4f6;
+                font-weight: 700;
+            }
+
+            .assistant-message :not(pre) > code {
+                background: #f3f4f6;
+                padding: 0.1rem 0.3rem;
+                border-radius: 4px;
+                font-size: 0.9em;
+            }
+
+            .assistant-message pre {
+                background: #0b1020;
+                color: #e6edf3;
+                padding: 0.75rem;
+                border-radius: 6px;
+                overflow: auto;
+            }
+
+        /* 原始 SSE 复制/下载条 */
         .sse-copy-bar {
             margin-top: 0.5rem;
             display: flex;
@@ -234,21 +332,26 @@
                 font-size: 0.82rem;
             }
 
-            .sse-copy-bar .right .sse-copy-btn {
-                font-size: 0.82rem;
-                padding: 0.25rem 0.55rem;
-                border-radius: 6px;
-                border: 1px solid var(--border-color);
-                background: #fff;
-                color: var(--text-color);
-                cursor: pointer;
-                transition: background 0.2s, border-color 0.2s;
+            .sse-copy-bar .right {
+                display: flex;
+                gap: 0.5rem;
             }
 
-                .sse-copy-bar .right .sse-copy-btn:hover {
-                    background: #fffefe;
-                    border-color: #d1d5db;
+                .sse-copy-bar .right button {
+                    font-size: 0.82rem;
+                    padding: 0.25rem 0.55rem;
+                    border-radius: 6px;
+                    border: 1px solid var(--border-color);
+                    background: #fff;
+                    color: var(--text-color);
+                    cursor: pointer;
+                    transition: background 0.2s, border-color 0.2s;
                 }
+
+                    .sse-copy-bar .right button:hover {
+                        background: #fffefe;
+                        border-color: #d1d5db;
+                    }
     </style>
 </head>
 <body>

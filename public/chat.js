@@ -1,10 +1,11 @@
 /**
- * LLM Chat App Frontend (Raw SSE mode + final-only rendering)
+ * LLM Chat App Frontend (Raw SSE mode + final-only rendering + gate + download)
  * - 兼容 Workers 原生 / OpenAI Chat Completions / OpenAI Responses
  * - 展示侧忽略 reasoning* 事件
  * - completed：若完整文本更长则替换此前增量
  * - 仅渲染“最后一个” <final>…</final>；若仅有 … 则兜底回退
- * - 支持：源SSE模式（/api/chat/raw）与 原始SSE捕获 + 复制
+ * - Raw 模式门控：在看到 <final> 前不渲染正文（防止推理/自述闪现）
+ * - 支持：源SSE模式（/api/chat/raw）与 原始SSE捕获 + 复制 + 下载
  */
 
 // DOM
@@ -43,7 +44,7 @@ function updateRawToggleUI() {
     if (!rawToggleBtn) return;
     rawToggleBtn.classList.toggle("active", captureRawSSE);
     rawToggleBtn.textContent = captureRawSSE ? "📋 原始SSE：开启" : "📋 原始SSE：关闭";
-    rawToggleBtn.title = captureRawSSE ? "当前将记录并可复制每次回答的原始SSE流" : "点击开启原始SSE捕获";
+    rawToggleBtn.title = captureRawSSE ? "当前将记录并可复制/下载每次回答的原始SSE流" : "点击开启原始SSE捕获";
 }
 function updateSourceToggleUI() {
     if (!sourceToggleBtn) return;
@@ -111,7 +112,8 @@ async function sendMessage() {
         let responseText = "";
         let sseBuffer = "";
         let hasFirstPiece = false;
-        const rawBlocks = []; // 原始事件块文本
+        let seenFinalOpen = false;       // ★ 门控：出现 <final> 才渲染
+        const rawBlocks = [];            // 原始事件块文本
 
         while (true) {
             const { done, value } = await reader.read();
@@ -145,21 +147,30 @@ async function sendMessage() {
 
                     if (!hasFirstPiece) { assistantMessageEl.textContent = ""; hasFirstPiece = true; }
 
+                    // 记录是否见到 <final>
+                    if (piece.includes("<final>")) seenFinalOpen = true;
+
+                    // 累积文本 / 替换 completed
                     if (jsonData?.type === "response.completed") {
                         if (piece.length > responseText.length + 8) responseText = piece; // 更长则替换
                     } else {
                         responseText += piece; // 增量累积
                     }
 
-                    assistantMessageEl.innerHTML = renderMarkdown(visibleTextFrom(responseText));
-                    highlightCode(assistantMessageEl);
+                    // ★ 门控渲染：未见 <final> 前不展示正文，保持“正在生成…”
+                    if (!seenFinalOpen) {
+                        assistantMessageEl.textContent = "正在生成…";
+                    } else {
+                        assistantMessageEl.innerHTML = renderMarkdown(visibleTextFrom(responseText));
+                        highlightCode(assistantMessageEl);
+                    }
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 }
             }
         }
 
         // —— 完成后兜底：若只剩 …，回退到原文或提示 —— //
-        let finalToShow = (visibleTextFrom(responseText) || "").trim();
+        let finalToShow = (seenFinalOpen ? visibleTextFrom(responseText) : responseText || "").trim();
         if (finalToShow === "..." || finalToShow === "…") {
             finalToShow = (responseText || "").trim();
             if (finalToShow === "..." || finalToShow === "…") {
@@ -168,7 +179,7 @@ async function sendMessage() {
             assistantMessageEl.innerHTML = renderMarkdown(finalToShow);
         }
 
-        // 原始SSE复制条
+        // 原始SSE复制/下载条
         if (captureRawSSE && rawBlocks.length) {
             appendRawCopyBar(assistantMessageEl, rawBlocks.join(""));
         }
@@ -242,7 +253,17 @@ function visibleTextFrom(raw) {
     return raw;
 }
 
-// 原始SSE复制条
+// 生成下载文件名（模型名 + 时间戳）
+function makeSSEFileName() {
+    const rawModel = (modelSelect && modelSelect.value) || "model";
+    const model = rawModel.replace(/[^a-zA-Z0-9._-]/g, "-"); // 简易清洗
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+    return `sse_${model}_${stamp}.txt`;
+}
+
+// 原始SSE复制/下载条
 function appendRawCopyBar(assistantEl, rawText) {
     const bar = document.createElement("div");
     bar.className = "sse-copy-bar";
@@ -255,21 +276,46 @@ function appendRawCopyBar(assistantEl, rawText) {
 
     const right = document.createElement("div");
     right.className = "right";
-    const btn = document.createElement("button");
-    btn.className = "sse-copy-btn";
-    btn.textContent = "复制原始SSE流";
-    btn.addEventListener("click", async () => {
+
+    // 复制按钮
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "sse-copy-btn";
+    copyBtn.textContent = "复制原始SSE流";
+    copyBtn.addEventListener("click", async () => {
         try {
             await navigator.clipboard.writeText(rawText);
-            const old = btn.textContent;
-            btn.textContent = "已复制 ✓";
-            setTimeout(() => (btn.textContent = old), 1200);
+            const old = copyBtn.textContent;
+            copyBtn.textContent = "已复制 ✓";
+            setTimeout(() => (copyBtn.textContent = old), 1200);
         } catch {
-            btn.textContent = "复制失败";
-            setTimeout(() => (btn.textContent = "复制原始SSE流"), 1200);
+            copyBtn.textContent = "复制失败";
+            setTimeout(() => (copyBtn.textContent = "复制原始SSE流"), 1200);
         }
     });
-    right.appendChild(btn);
+
+    // 下载按钮
+    const downloadBtn = document.createElement("button");
+    downloadBtn.className = "sse-download-btn";
+    downloadBtn.textContent = "下载原始SSE(.txt)";
+    downloadBtn.addEventListener("click", () => {
+        try {
+            const blob = new Blob([rawText], { type: "text/plain;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = makeSSEFileName();
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch {
+            downloadBtn.textContent = "下载失败";
+            setTimeout(() => (downloadBtn.textContent = "下载原始SSE(.txt)"), 1200);
+        }
+    });
+
+    right.appendChild(copyBtn);
+    right.appendChild(downloadBtn);
 
     bar.appendChild(left);
     bar.appendChild(right);
