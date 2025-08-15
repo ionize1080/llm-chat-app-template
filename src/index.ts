@@ -1,8 +1,7 @@
 /**
  * Cloudflare Worker backend
- * - /api/chat      ：规范化 SSE（按你之前的逻辑，便于统一前端解析）
- * - /api/chat/raw  ：直接返回上游原始 SSE（真正未经我们处理的 event/data/[DONE]）
- * 两个端点都复用相同的参数构造逻辑（系统提示注入、gpt-oss与chat的参数差异）
+ * - /api/chat      ：规范化 SSE（过滤推理事件；见到 <final> 前过滤常见自述/占位）
+ * - /api/chat/raw  ：上游原始 SSE 直通（保留 event:/data:/[DONE]）
  */
 
 interface Env {
@@ -14,8 +13,8 @@ const DEFAULT_MODEL_ID = "@cf/openai/gpt-oss-120b";
 const DEFAULT_SYSTEM_PROMPT =
     "You are a helpful assistant. Return ONLY the final answer for the user. " +
     "Do not include analysis, self-talk, or reasoning. " +
-    "If you need to think, do it silently. " +
-    "Wrap the final answer inside <final>...</final> when possible.";
+    "When you are fully ready, output exactly once: <final> + the final answer + </final>. " +
+    "Never output <final> more than once. Never output ... inside <final>.";
 
 export default {
     async fetch(request: Request, env: Env): Promise<Response> {
@@ -28,7 +27,6 @@ export default {
         if (request.method === "POST" && url.pathname === "/api/chat") {
             return handleChatNormalized(request, env);
         }
-
         if (request.method === "POST" && url.pathname === "/api/chat/raw") {
             return handleChatRaw(request, env);
         }
@@ -37,7 +35,7 @@ export default {
     },
 };
 
-// ---------- 公共：构造参数 ----------
+// ---------- 构造参数 ----------
 async function buildParamsFromRequest(request: Request) {
     const { messages = [], model } = (await request.json()) as {
         messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
@@ -78,6 +76,9 @@ async function handleChatNormalized(request: Request, env: Env): Promise<Respons
         const aiResponse = await env.AI.run(modelId, aiParams, { returnRawResponse: true, stream: true }) as Response;
 
         let sseBuffer = "";
+        let seenFinalOpen = false;         // 是否已见到 <final>
+        let preFinalTail = "";            // <final> 检测窗口（累积最近片段）
+        const MAX_TAIL = 128;
 
         const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>({
             transform(chunk, controller) {
@@ -99,14 +100,27 @@ async function handleChatNormalized(request: Request, env: Env): Promise<Respons
                         let obj: any;
                         try { obj = JSON.parse(jsonStr); } catch { continue; }
 
-                        // 这里保留展示友好的策略：不转发 reasoning 事件
+                        // 展示友好：丢弃 reasoning 事件
                         if (obj?.type && String(obj.type).startsWith("response.reasoning")) continue;
 
                         const piece = normalizeChunkToText(obj);
-                        if (piece) {
-                            const out = `data: ${JSON.stringify({ response: piece })}\n\n`;
-                            controller.enqueue(new TextEncoder().encode(out));
+                        if (!piece) continue;
+
+                        // —— <final> 之前的轻量过滤：自述/占位 —— //
+                        // 更新检测窗口
+                        preFinalTail = (preFinalTail + piece).slice(-MAX_TAIL);
+                        if (!seenFinalOpen && preFinalTail.includes("<final>")) {
+                            seenFinalOpen = true;
                         }
+                        if (!seenFinalOpen) {
+                            const p = piece.trim();
+                            // 丢弃明显自述/角色行/占位
+                            if (/^(the user asks|user:|assistant:|system:|plan:)/i.test(p)) continue;
+                            if (p === "..." || p === "…") continue;
+                        }
+
+                        const out = `data: ${JSON.stringify({ response: piece })}\n\n`;
+                        controller.enqueue(new TextEncoder().encode(out));
                     }
                 }
             },
@@ -122,10 +136,20 @@ async function handleChatNormalized(request: Request, env: Env): Promise<Respons
                         const obj = JSON.parse(jsonStr);
                         if (obj?.type && String(obj.type).startsWith("response.reasoning")) continue;
                         const piece = normalizeChunkToText(obj);
-                        if (piece) {
-                            const out = `data: ${JSON.stringify({ response: piece })}\n\n`;
-                            controller.enqueue(new TextEncoder().encode(out));
+                        if (!piece) continue;
+
+                        preFinalTail = (preFinalTail + piece).slice(-MAX_TAIL);
+                        if (!seenFinalOpen && preFinalTail.includes("<final>")) {
+                            seenFinalOpen = true;
                         }
+                        if (!seenFinalOpen) {
+                            const p = piece.trim();
+                            if (/^(the user asks|user:|assistant:|system:|plan:)/i.test(p)) continue;
+                            if (p === "..." || p === "…") continue;
+                        }
+
+                        const out = `data: ${JSON.stringify({ response: piece })}\n\n`;
+                        controller.enqueue(new TextEncoder().encode(out));
                     } catch { }
                 }
                 sseBuffer = "";
@@ -154,10 +178,8 @@ async function handleChatNormalized(request: Request, env: Env): Promise<Respons
 async function handleChatRaw(request: Request, env: Env): Promise<Response> {
     try {
         const { modelId, aiParams } = await buildParamsFromRequest(request);
-        // 直接返回上游原始流（包含 event:/data:/[DONE] 等）
         const aiResponse = await env.AI.run(modelId, aiParams, { returnRawResponse: true, stream: true }) as Response;
-        // 原样透传，不做 Transform；保留上游 headers
-        return aiResponse;
+        return aiResponse; // 原样透传
     } catch (error) {
         console.error("Error /api/chat/raw:", error);
         return new Response(JSON.stringify({ error: "Failed to process request" }), {
@@ -167,7 +189,7 @@ async function handleChatRaw(request: Request, env: Env): Promise<Response> {
     }
 }
 
-// ---------- 从各种事件里提取可读文本 ----------
+// ---------- 事件文本提取 ----------
 function normalizeChunkToText(obj: any): string {
     // Workers 原生统一流：{response:"..."}
     if (typeof obj?.response === "string") return obj.response;
@@ -177,7 +199,7 @@ function normalizeChunkToText(obj: any): string {
         return obj.delta;
     }
 
-    // OpenAI Responses：完成，提取 response.output[*]
+    // OpenAI Responses：完成
     if (obj?.type === "response.completed") {
         const out = obj?.response?.output;
         if (Array.isArray(out)) {
@@ -209,7 +231,7 @@ function normalizeChunkToText(obj: any): string {
     if (typeof ch?.text === "string") return ch.text;
     if (typeof ch?.message?.content === "string") return ch.message.content;
 
-    // 其它见过的形态
+    // 其它兼容
     if (typeof obj?.part?.text === "string") return obj.part.text;
     if (typeof obj?.item?.content?.[0]?.text === "string") return obj.item.content[0].text;
 

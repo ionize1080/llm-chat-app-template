@@ -1,10 +1,10 @@
 /**
- * LLM Chat App Frontend (Raw SSE mode supported)
+ * LLM Chat App Frontend (Raw SSE mode + final-only rendering)
  * - 兼容 Workers 原生 / OpenAI Chat Completions / OpenAI Responses
- * - 过滤 reasoning 事件（仅用于展示；原始SSE捕获不受影响）
+ * - 展示侧忽略 reasoning* 事件
  * - completed：若完整文本更长则替换此前增量
- * - 仅渲染 <final>…</final> 内文本（如存在），否则渲染原文
- * - 新增：源SSE模式（直接走 /api/chat/raw） + 原始SSE捕获与复制
+ * - 仅渲染“最后一个” <final>…</final>；若仅有 … 则兜底回退
+ * - 支持：源SSE模式（/api/chat/raw）与 原始SSE捕获 + 复制
  */
 
 // DOM
@@ -19,7 +19,7 @@ const sourceToggleBtn = document.getElementById("source-toggle");
 let isProcessing = false;
 const chatHistory = [];
 
-// --- 持久化的两个开关 ---
+// 两个开关（持久化）
 let captureRawSSE = (localStorage.getItem("captureRawSSE") === "1");
 let useRawEndpoint = (localStorage.getItem("useRawEndpoint") === "1");
 updateRawToggleUI();
@@ -39,7 +39,6 @@ if (sourceToggleBtn) {
         updateSourceToggleUI();
     });
 }
-
 function updateRawToggleUI() {
     if (!rawToggleBtn) return;
     rawToggleBtn.classList.toggle("active", captureRawSSE);
@@ -53,17 +52,14 @@ function updateSourceToggleUI() {
     sourceToggleBtn.title = useRawEndpoint ? "使用 /api/chat/raw，直接消费上游原始SSE" : "使用 /api/chat（规范化SSE）";
 }
 
-// 输入框行为
+// 输入框交互
 if (userInput) {
     userInput.addEventListener("input", () => {
         userInput.style.height = "auto";
         userInput.style.height = Math.min(userInput.scrollHeight, 200) + "px";
     });
     userInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
     });
 }
 if (sendButton) sendButton.addEventListener("click", () => sendMessage());
@@ -115,7 +111,7 @@ async function sendMessage() {
         let responseText = "";
         let sseBuffer = "";
         let hasFirstPiece = false;
-        const rawBlocks = []; // 收集原始SSE文本块（evt+\n\n）
+        const rawBlocks = []; // 原始事件块文本
 
         while (true) {
             const { done, value } = await reader.read();
@@ -123,15 +119,13 @@ async function sendMessage() {
             const chunkStr = decoder.decode(value, { stream: true });
             sseBuffer += chunkStr;
 
-            // —— 捕获原始（按原样） ——（开启时）
-            // 不能直接 push chunk，因为可能截断；等按块拆完再收
+            // 按事件块切分（空行）
             const events = sseBuffer.split("\n\n");
             sseBuffer = events.pop() || "";
 
             for (const evt of events) {
                 if (captureRawSSE) rawBlocks.push(evt + "\n\n");
 
-                // 解析 data: 行（event: 行仅用于辅助理解，不参与展示）
                 const lines = evt.split("\n");
                 for (const rawLine of lines) {
                     const line = rawLine.trim();
@@ -143,21 +137,16 @@ async function sendMessage() {
                     let jsonData;
                     try { jsonData = JSON.parse(jsonStr); } catch { continue; }
 
-                    // —— 展示时忽略 reasoning 事件，但原始SSE依然完整记录
+                    // 展示时忽略 reasoning 事件（原始捕获不受影响）
                     if (jsonData?.type && String(jsonData.type).startsWith("response.reasoning")) continue;
 
                     const piece = pickChunkText(jsonData);
                     if (!piece) continue;
 
-                    if (!hasFirstPiece) {
-                        assistantMessageEl.textContent = "";
-                        hasFirstPiece = true;
-                    }
+                    if (!hasFirstPiece) { assistantMessageEl.textContent = ""; hasFirstPiece = true; }
 
                     if (jsonData?.type === "response.completed") {
-                        if (piece.length > responseText.length + 8) {
-                            responseText = piece; // 更长则替换
-                        }
+                        if (piece.length > responseText.length + 8) responseText = piece; // 更长则替换
                     } else {
                         responseText += piece; // 增量累积
                     }
@@ -169,12 +158,22 @@ async function sendMessage() {
             }
         }
 
-        // 结束：追加复制条
+        // —— 完成后兜底：若只剩 …，回退到原文或提示 —— //
+        let finalToShow = (visibleTextFrom(responseText) || "").trim();
+        if (finalToShow === "..." || finalToShow === "…") {
+            finalToShow = (responseText || "").trim();
+            if (finalToShow === "..." || finalToShow === "…") {
+                finalToShow = "这次生成出了点问题，请重试或换个问法。";
+            }
+            assistantMessageEl.innerHTML = renderMarkdown(finalToShow);
+        }
+
+        // 原始SSE复制条
         if (captureRawSSE && rawBlocks.length) {
             appendRawCopyBar(assistantMessageEl, rawBlocks.join(""));
         }
 
-        chatHistory.push({ role: "assistant", content: visibleTextFrom(responseText) });
+        chatHistory.push({ role: "assistant", content: finalToShow || visibleTextFrom(responseText) });
     } catch (err) {
         console.error(err);
         addMessageToChat("assistant", "Sorry, there was an error processing your request.");
@@ -232,13 +231,18 @@ function pickChunkText(jsonData) {
     return "";
 }
 
-// 只渲染 <final>…</final>（若存在）；否则原样
+// —— 只渲染“最后一个” <final>…</final>；过滤占位 … —— //
 function visibleTextFrom(raw) {
     if (!raw) return "";
-    const m = raw.match(/<final>([\s\S]*?)<\/final>/i);
-    return m ? m[1] : raw;
+    const matches = [...raw.matchAll(/<final>([\s\S]*?)<\/final>/gi)];
+    if (matches.length) {
+        const last = (matches[matches.length - 1][1] || "").trim();
+        if (last && last !== "..." && last !== "…") return last;
+    }
+    return raw;
 }
 
+// 原始SSE复制条
 function appendRawCopyBar(assistantEl, rawText) {
     const bar = document.createElement("div");
     bar.className = "sse-copy-bar";
