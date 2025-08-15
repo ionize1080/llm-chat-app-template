@@ -1,14 +1,9 @@
 /**
- * LLM Chat App Frontend (fixed v3)
- * 兼容三类流式返回：
- * 1) Workers AI/常规模型：{ "response": "..." }
- * 2) OpenAI Chat Completions：data: {"choices":[{"delta":{"content": "..."}}]}
- * 3) OpenAI Responses：data: {"type":"response.output_text.delta","delta":"..."} ... "response.completed"
- *
- * 额外处理：
+ * LLM Chat App Frontend (fixed v4)
+ * - 兼容 Workers 原生 / OpenAI Chat Completions / OpenAI Responses
  * - 过滤 reasoning 事件（response.reasoning*）
- * - 如果已经收到过增量 delta，则跳过 completed 的全文兜底，避免重复
- * - 仅渲染 <final>…</final> 中的内容（若存在），其余当作思考/旁白忽略
+ * - 不再跳过 completed；若 completed 文本更长，则替换此前增量，避免“只有 …”
+ * - 仅渲染 <final>…</final> 内文本（如存在），否则渲染原文
  */
 
 // DOM elements
@@ -28,7 +23,6 @@ if (userInput) {
         userInput.style.height = Math.min(userInput.scrollHeight, 200) + "px";
     });
 
-    // Send with Enter (Shift+Enter for newline)
     userInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
@@ -38,9 +32,7 @@ if (userInput) {
 }
 
 if (sendButton) {
-    sendButton.addEventListener("click", () => {
-        sendMessage();
-    });
+    sendButton.addEventListener("click", () => sendMessage());
 }
 
 async function sendMessage() {
@@ -61,11 +53,11 @@ async function sendMessage() {
     chatHistory.push({ role: "user", content: message });
 
     try {
+        // 先创建一个空的 assistant 气泡
         const assistantMessageEl = document.createElement("div");
         assistantMessageEl.className = "message assistant-message";
-        assistantMessageEl.innerHTML = "";
+        assistantMessageEl.textContent = "正在生成…";
         chatMessages.appendChild(assistantMessageEl);
-        highlightCode(assistantMessageEl);
         chatMessages.scrollTop = chatMessages.scrollHeight;
 
         const response = await fetch("/api/chat", {
@@ -79,7 +71,8 @@ async function sendMessage() {
 
         if (response.status === 403) {
             const data = await response.json().catch(() => ({}));
-            addMessageToChat("assistant", data.error || "网站正在建设中");
+            assistantMessageEl.textContent = "";
+            assistantMessageEl.innerHTML = renderMarkdown(data.error || "网站正在建设中");
             return;
         }
         if (!response.ok || !response.body) {
@@ -90,7 +83,7 @@ async function sendMessage() {
         const decoder = new TextDecoder();
         let responseText = "";
         let sseBuffer = "";
-        let sawOutputTextDelta = false;
+        let hasFirstPiece = false;
 
         while (true) {
             const { done, value } = await reader.read();
@@ -102,14 +95,14 @@ async function sendMessage() {
             sseBuffer = events.pop() || ""; // 半包留到下次
 
             for (const evt of events) {
-                // 一个事件内部可能有多行：event:/id:/retry:/data:
                 const lines = evt.split("\n");
                 for (const rawLine of lines) {
                     const line = rawLine.trim();
-                    if (!line) continue;
-                    if (!line.startsWith("data:")) continue;
+                    if (!line || !line.startsWith("data:")) continue;
+
                     const jsonStr = line.replace(/^data:\s*/, "").trim();
                     if (!jsonStr || jsonStr === "[DONE]") continue;
+
                     let jsonData;
                     try {
                         jsonData = JSON.parse(jsonStr);
@@ -117,28 +110,35 @@ async function sendMessage() {
                         continue;
                     }
 
-                    // —— 过滤 reasoning 事件 —— 
+                    // —— 丢弃 reasoning 事件 —— 
                     if (jsonData?.type && String(jsonData.type).startsWith("response.reasoning")) {
                         continue;
                     }
 
-                    // 标记是否出现过增量文本
-                    if (jsonData?.type === "response.output_text.delta" && typeof jsonData?.delta === "string" && jsonData.delta.length) {
-                        sawOutputTextDelta = true;
-                    }
-
-                    // 若已经出现过增量文本，则跳过 completed 里的最终全文兜底，避免重复
-                    if (jsonData?.type === "response.completed" && sawOutputTextDelta) {
-                        continue;
-                    }
-
                     const piece = pickChunkText(jsonData);
-                    if (piece) {
-                        responseText += piece;
-                        assistantMessageEl.innerHTML = renderMarkdown(visibleTextFrom(responseText));
-                        highlightCode(assistantMessageEl);
-                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    if (!piece) continue;
+
+                    // 第一次拿到内容，清掉“正在生成…”
+                    if (!hasFirstPiece) {
+                        assistantMessageEl.textContent = "";
+                        hasFirstPiece = true;
                     }
+
+                    // ★ 核心：如果是 completed 的完整文本，且更长，则替换此前增量
+                    if (jsonData?.type === "response.completed") {
+                        if (piece.length > responseText.length + 8) {
+                            responseText = piece;
+                        } else {
+                            // 太短或已包含，忽略以避免重复
+                        }
+                    } else {
+                        // 普通增量：直接累加
+                        responseText += piece;
+                    }
+
+                    assistantMessageEl.innerHTML = renderMarkdown(visibleTextFrom(responseText));
+                    highlightCode(assistantMessageEl);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
                 }
             }
         }
@@ -169,7 +169,7 @@ function pickChunkText(jsonData) {
         return jsonData.delta;
     }
     if (jsonData?.type === "response.completed") {
-        // 兜底提取：如果前面没有 delta，也能得到最终文本
+        // 兜底：从 response.output[*] 提取文本
         const out = jsonData?.response?.output;
         if (Array.isArray(out)) {
             const texts = [];

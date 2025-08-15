@@ -1,9 +1,9 @@
 /**
- * Cloudflare Worker backend (fixed v3)
+ * Cloudflare Worker backend (fixed v4)
  * - 统一将上游 SSE 解析并转为 {response:"..."} 的 SSE 片段
- * - 忽略 reasoning 事件（response.reasoning*）
- * - 若已收到增量 delta，则不在 completed 时重复输出全文
- * - 强系统提示：鼓励仅返回最终答案，并用 <final>…</final> 包住
+ * - 过滤 reasoning 事件（response.reasoning*）
+ * - 不再丢弃 completed；由前端判断“更长则替换”避免重复
+ * - 系统提示鼓励仅返回最终答案，最好包在 <final>…</final>
  */
 
 interface Env {
@@ -48,7 +48,6 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
 
         const modelId = (model ?? DEFAULT_MODEL_ID);
 
-        // 注入 system 提示（若未提供）
         if (!messages.some((m) => m.role === "system")) {
             messages.unshift({ role: "system", content: systemPrompt });
         }
@@ -62,13 +61,13 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
             aiParams = {
                 instructions: systemPrompt,
                 input: lastUser?.content ?? "Hello",
-                max_output_tokens: 4096,
+                max_output_tokens: 1024,
                 stream: true,
             };
         } else {
             aiParams = {
                 messages,
-                max_tokens: 4096,
+                max_tokens: 1024,
                 stream: true,
             };
         }
@@ -80,7 +79,6 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
         ) as Response;
 
         let sseBuffer = "";
-        let sawOutputTextDelta = false;
 
         const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>({
             transform(chunk, controller) {
@@ -108,18 +106,8 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
                             continue;
                         }
 
-                        // 1) 丢弃 reasoning 事件（如存在）
+                        // 丢弃 reasoning 事件（如存在）
                         if (obj?.type && String(obj.type).startsWith("response.reasoning")) {
-                            continue;
-                        }
-
-                        // 2) 标记是否收到过增量文本
-                        if (obj?.type === "response.output_text.delta" && typeof obj?.delta === "string" && obj.delta.length) {
-                            sawOutputTextDelta = true;
-                        }
-
-                        // 3) 已经收到过增量文本，则不要在 completed 再次抽取完整文本（避免重复）
-                        if (obj?.type === "response.completed" && sawOutputTextDelta) {
                             continue;
                         }
 
@@ -143,7 +131,6 @@ async function handleChatRequest(request: Request, env: Env): Promise<Response> 
                     try {
                         const obj = JSON.parse(jsonStr);
                         if (obj?.type && String(obj.type).startsWith("response.reasoning")) continue;
-                        if (obj?.type === "response.completed" && sawOutputTextDelta) continue;
                         const piece = normalizeChunkToText(obj);
                         if (piece) {
                             const out = `data: ${JSON.stringify({ response: piece })}\n\n`;
@@ -177,12 +164,12 @@ function normalizeChunkToText(obj: any): string {
     // Workers 原生统一流：{response:"..."}
     if (typeof obj?.response === "string") return obj.response;
 
-    // OpenAI Responses 增量事件
+    // OpenAI Responses 增量
     if (obj?.type === "response.output_text.delta" && typeof obj?.delta === "string") {
         return obj.delta;
     }
 
-    // OpenAI Responses 完成事件：从 response.output[*] 提取文本（仅在没见过 delta 时才会走到这里）
+    // OpenAI Responses 完成：从 response.output[*] 提取文本
     if (obj?.type === "response.completed") {
         const out = obj?.response?.output;
         if (Array.isArray(out)) {
