@@ -31,6 +31,7 @@ const CN_SYSTEM_PROMPT = `
 - 结束。`;
 
 const DEFAULT_MODEL_ID = "@cf/openai/gpt-oss-120b";
+const GENERATION_FALLBACK = "这次生成出了点问题，请重试或换个问法。";
 
 // --------- 地域识别与调试开关 ----------
 function getCountry(request: Request): string {
@@ -134,7 +135,6 @@ async function buildParamsFromRequest(request: Request) {
             instructions: sysPrompt,
             input: lastUserText,
             max_output_tokens: 2048,
-            stream: true,
         };
     } else {
         aiParams = {
@@ -143,17 +143,23 @@ async function buildParamsFromRequest(request: Request) {
             stream: true,
         };
     }
-    return { modelId, aiParams, cnMode, lastUserText };
+    return { modelId, aiParams, cnMode, lastUserText, isGptOss };
 }
 
 // ---------- 规范化 SSE：/api/chat ----------
 async function handleChatNormalized(request: Request, env: Env): Promise<Response> {
     try {
-        const { modelId, aiParams, cnMode, lastUserText } = await buildParamsFromRequest(request);
+        const { modelId, aiParams, cnMode, lastUserText, isGptOss } = await buildParamsFromRequest(request);
 
         // CN 模式前置拦截：命中禁区直接拒绝（不触发模型）
         if (cnMode && isForbiddenInCN(lastUserText)) {
             return sseFromFinalText("抱歉，我无法就该话题提供帮助。我们可以讨论编程实践、通用文学鉴赏或旅行计划等话题。");
+        }
+
+        if (isGptOss) {
+            const aiResult = await env.AI.run(modelId, aiParams);
+            const finalText = deriveAssistantText(aiResult);
+            return sseFromFinalText(finalText);
         }
 
         const aiResponse = await env.AI.run(modelId, aiParams, {
@@ -260,11 +266,17 @@ async function handleChatNormalized(request: Request, env: Env): Promise<Respons
 // ---------- 原始 SSE 直通：/api/chat/raw ----------
 async function handleChatRaw(request: Request, env: Env): Promise<Response> {
     try {
-        const { modelId, aiParams, cnMode, lastUserText } = await buildParamsFromRequest(request);
+        const { modelId, aiParams, cnMode, lastUserText, isGptOss } = await buildParamsFromRequest(request);
 
         // CN 模式前置拦截（raw 也同样拦截）
         if (cnMode && isForbiddenInCN(lastUserText)) {
             return sseFromFinalText("抱歉，我无法就该话题提供帮助。我们可以讨论编程实践、通用文学鉴赏或旅行计划等话题。");
+        }
+
+        if (isGptOss) {
+            const aiResult = await env.AI.run(modelId, aiParams);
+            const finalText = deriveAssistantText(aiResult);
+            return sseFromFinalText(finalText);
         }
 
         const aiResponse = await env.AI.run(modelId, aiParams, {
@@ -281,6 +293,61 @@ async function handleChatRaw(request: Request, env: Env): Promise<Response> {
             headers: { "content-type": "application/json" },
         });
     }
+}
+
+// ---------- 非流式响应提取 ----------
+function deriveAssistantText(result: any): string {
+    const raw = stripFinalTags(extractTextFromAiResult(result)).trim();
+    if (!raw || raw === "..." || raw === "�") return GENERATION_FALLBACK;
+    return raw;
+}
+
+function stripFinalTags(text: string): string {
+    if (typeof text !== "string") return "";
+    const match = text.match(/<final>([\s\S]*?)<\/final>/i);
+    if (match) return match[1]?.trim() ?? "";
+    return text;
+}
+
+function extractTextFromAiResult(result: any): string {
+    if (!result) return "";
+    if (typeof result === "string") return result;
+    if (typeof result?.response === "string") return result.response;
+    if (typeof result?.result === "string") return result.result;
+
+    const outputs =
+        result?.response?.output ??
+        result?.result?.output ??
+        result?.output;
+
+    if (Array.isArray(outputs)) {
+        const texts: string[] = [];
+        for (const item of outputs) {
+            if (!item) continue;
+            if (typeof item?.text === "string") {
+                texts.push(item.text);
+            }
+            const content = (item as any)?.content;
+            if (Array.isArray(content)) {
+                for (const piece of content) {
+                    if (typeof (piece as any)?.text === "string") {
+                        texts.push((piece as any).text);
+                    } else if (typeof (piece as any)?.data?.text === "string") {
+                        texts.push((piece as any).data.text);
+                    }
+                }
+            }
+        }
+        if (texts.length) return texts.join("");
+    }
+
+    const choice = (result as any)?.choices?.[0];
+    if (choice) {
+        if (typeof choice?.text === "string") return choice.text;
+        if (typeof choice?.message?.content === "string") return choice.message.content;
+    }
+
+    return "";
 }
 
 // ---------- 事件文本提取 ----------
