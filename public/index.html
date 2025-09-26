@@ -173,22 +173,33 @@
 
         #send-button {
             margin-left: 0;
-            padding: 0 1rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 46px;
+            padding: 0 1.15rem;
             background-color: var(--primary-color);
             color: white;
             border: none;
-            border-radius: 4px;
+            border-radius: 14px;
             cursor: pointer;
-            transition: background 0.2s;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 10px 24px -16px rgba(246, 130, 31, 0.65);
         }
 
             #send-button:hover {
                 background-color: var(--primary-hover);
+                transform: translateY(-1px);
+                box-shadow: 0 16px 32px -20px rgba(246, 130, 31, 0.7);
             }
 
             #send-button:disabled {
                 background-color: var(--text-light);
                 cursor: not-allowed;
+                transform: none;
+                box-shadow: none;
             }
 
         .typing-indicator {
