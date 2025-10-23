@@ -179,6 +179,7 @@ async function sendMessage() {
 
         assistantMessageEl.innerHTML = renderMarkdown(finalToShow);
         highlightCode(assistantMessageEl);
+        typesetMath(assistantMessageEl);
 
         // 原始SSE复制/下载条
         if (captureRawSSE && rawBlocks.length) {
@@ -329,6 +330,7 @@ function addMessageToChat(role, content) {
     messageEl.className = `message ${role}-message`;
     if (role === "assistant") {
         messageEl.innerHTML = renderMarkdown(content);
+        typesetMath(messageEl);
     } else {
         const p = document.createElement("p");
         p.textContent = content;
@@ -362,4 +364,15 @@ function addCopyButtons(el) {
         btn.style.position = "absolute"; btn.style.top = "6px"; btn.style.right = "6px";
         pre.appendChild(btn);
     });
+}
+
+// MathJax typesetting helper
+function typesetMath(el) {
+    try {
+        if (window.MathJax && window.MathJax.typesetPromise) {
+            window.MathJax.typesetPromise([el]).catch((e) => console.error(e));
+        }
+    } catch (e) {
+        console.error(e);
+    }
 }
