@@ -16,6 +16,17 @@ const typingIndicator = document.getElementById("typing-indicator");
 const modelSelect = document.getElementById("model-select");
 const rawToggleBtn = document.getElementById("raw-toggle");
 const sourceToggleBtn = document.getElementById("source-toggle");
+// Inject a demo button if missing (to verify math rendering quickly)
+const headerRightEl = document.querySelector('.header-right');
+let demoInsertBtn = document.getElementById('demo-insert');
+if (headerRightEl && !demoInsertBtn) {
+    demoInsertBtn = document.createElement('button');
+    demoInsertBtn.id = 'demo-insert';
+    demoInsertBtn.className = 'ghost-btn';
+    demoInsertBtn.title = '插入示例内容作为助手消息进行渲染验证';
+    demoInsertBtn.textContent = '🧪 插入示例';
+    headerRightEl.appendChild(demoInsertBtn);
+}
 
 let isProcessing = false;
 const chatHistory = [];
@@ -64,6 +75,84 @@ if (userInput) {
     });
 }
 if (sendButton) sendButton.addEventListener("click", () => sendMessage());
+if (demoInsertBtn) {
+    demoInsertBtn.addEventListener('click', () => {
+        const sample = String.raw`里叶变换（Fourier Transform） 是一种把时间（或空间）域的信号转换到频率域的数学工具。它揭示了信号中各个不同频率成分的幅度和相位分布。
+
+1. 连续时间傅里叶变换（CTFT）
+正向变换（从时域到频域）
+[ \\boxed{X(\\omega)=\\mathcal{F}{x(t)}=\\int_{-\\infty}^{\\infty} x(t),e^{-j\\omega t},dt} ]
+
+(x(t))：时域信号（实数或复数）。
+(X(\\omega))：频域函数，频率变量 (\\omega)（弧度/秒）。
+(j=\\sqrt{-1})。
+负指数 (e^{-j\\omega t}) 表示把信号投影到复指数基 (\\exp(j\\omega t)) 上。
+逆变换（从频域回到时域）
+[ \\boxed{x(t)=\\mathcal{F}^{-1}{X(\\omega)}=\\frac{1}{2\\pi}\\int_{-\\infty}^{\\infty} X(\\omega),e^{j\\omega t},d\\omega} ]
+
+用 (2\\pi) 归一化因子保证变换是可逆的。
+2. 连续时间傅里叶级数（周期信号）
+对周期为 (T)（基本频率 (\\omega_0=2\\pi/T)）的信号 (x(t))，可以用离散频谱表示：
+
+[ x(t)=\\sum_{k=-\\infty}^{\\infty} C_k,e^{j k\\omega_0 t},\\qquad C_k=\\frac{1}{T}\\int_{t_0}^{t_0+T} x(t),e^{-j k\\omega_0 t},dt ]
+
+3. 离散时间傅里叶变换（DTFT）
+对离散时间序列 (x[n])（(n\\in\\mathbb{Z})）：
+
+[ \\boxed{X(e^{j\\omega})=\\sum_{n=-\\infty}^{\\infty} x[n],e^{-j\\omega n}} ]
+
+(\\omega) 为归一化角频率（弧度/样本），周期为 (2\\pi)。
+逆变换：
+[ x[n]=\\frac{1}{2\\pi}\\int_{-\\pi}^{\\pi} X(e^{j\\omega}),e^{j\\omega n},d\\omega ]
+
+4. 快速傅里叶变换（FFT）
+FFT 并不是新公式，而是一种 O(N log N) 计算离散傅里叶变换（DFT）的高效算法。
+
+离散傅里叶变换（DFT）定义（长度为 (N)）：
+
+[ X[k]=\\sum_{n=0}^{N-1} x[n];e^{-j\\frac{2\\pi}{N}kn},\\qquad k=0,1,\\dots,N-1 ]
+
+逆变换：
+
+[ x[n]=\\frac{1}{N}\\sum_{k=0}^{N-1} X[k];e^{j\\frac{2\\pi}{N}kn} ]
+
+5. 核心概念解释
+概念\t含义
+频率 (\\omega)\t信号随时间变化的快慢，单位为弧度/秒（连续）或弧度/样本（离散）。
+复指数基 (\\mathrm{e}^{j\\omega t})\t复数正弦波，等价于 (\\cos(\\omega t)+j\\sin(\\omega t))。傅里叶变换把信号拆分成这些基函数的线性组合。
+**幅度谱** ( |X(\\omega)| )\t各频率分量的幅值分布。
+相位谱 (\\arg{X(\\omega)})\t各频率分量相对于参考时刻的相位偏移，决定信号在时域的形状。
+时频互补性\t时间分辨率好 ↔ 频率分辨率差，反之亦然（不确定性原理）。
+线性与时移属性 (\\mathcal{F}{a,x_1(t)+b,x_2(t)}=aX_1(\\omega)+bX_2(\\omega))；(\\mathcal{F}{x(t-t_0)}=X(\\omega)e^{-j\\omega t_0})。
+6. 示例
+例 1：单位冲击（Dirac delta）
+(x(t)=\\delta(t))
+
+[ X(\\omega)=\\int_{-\\infty}^{\\infty}\\delta(t)e^{-j\\omega t}dt = 1 ]
+
+→ 所有频率幅度相同，表示冲击在频域是“白噪声”。
+
+例 2：单频正弦波
+(x(t)=\\cos(\\omega_0 t)=\\frac{1}{2}\\big(e^{j\\omega_0 t}+e^{-j\\omega_0 t}\\big))
+
+[ X(\\omega)=\\pi\\big[\\delta(\\omega-\\omega_0)+\\delta(\\omega+\\omega_0)\\big] ]
+
+→ 频谱只在 (\\pm\\omega_0) 处出现两条冲击，说明信号只含单一频率。
+
+7. 常用应用
+信号分析：识别音频、通信、振动等信号中的频率成分。
+滤波：在频域设计低通/高通/带通滤波器，再转回时域实现。
+图像处理：二维傅里叶变换用于频谱分析、去噪、特征提取。
+谱估计：功率谱密度（PSD）是 (|X(\\omega)|^2) 的期望，描述随机信号的能量分布。
+小结
+傅里叶变换把一个随时间（或空间）变化的函数表示为不同正弦（余弦）成分的叠加。其核心公式为
+
+[ X(\\omega)=\\int_{-\\infty}^{\\infty} x(t)e^{-j\\omega t}dt,\\qquad x(t)=\\frac{1}{2\\pi}\\int_{-\\infty}^{\\infty} X(\\omega)e^{j\\omega t}d\\omega, ]
+
+并通过离散、周期、快速等不同形式在实际工程中广泛使用。希望以上公式与解释能帮助你理解傅里叶变换的本质与用途。`;
+        addMessageToChat('assistant', sample);
+    });
+}
 
 async function sendMessage() {
     const message = (userInput?.value || "").trim();
@@ -342,7 +431,8 @@ function addMessageToChat(role, content) {
 }
 function renderMarkdown(md) {
     const safe = md || "";
-    if (window.marked) return window.marked.parse(safe);
+    const pre = preprocessMath(safe);
+    if (window.marked) return window.marked.parse(pre);
     const div = document.createElement("div"); div.textContent = safe; return div.innerHTML;
 }
 function highlightCode(el) {
@@ -375,4 +465,23 @@ function typesetMath(el) {
     } catch (e) {
         console.error(e);
     }
+}
+
+// Heuristic math preprocessor: support `[ ... ]` blocks and parentheses with TeX commands.
+function preprocessMath(input) {
+    let out = input;
+
+    // 1) Block-level: a line that is just `[ ... ]` -> `$$ ... $$`
+    //    Skip Markdown links like `[text](url)` or references `[id]: url`.
+    out = out.replace(/^\s*\[\s*([\s\S]*?)\s*\]\s*$/gm, (m, inner) => {
+        if (/\]\s*\(/.test(m)) return m;     // looks like a link
+        if (/^\s*\[[^\]]+\]:/m.test(m)) return m; // reference-style link
+        return `$$ ${inner} $$`;
+    });
+
+    // 2) Inline: wrap parentheses containing TeX commands into `\( ... \)`
+    //    e.g. `(\omega)` -> `\(\omega\)`; avoid already-escaped `\(`.
+    out = out.replace(/(^|[^\\])\(([^()\n]{0,200}\\[a-zA-Z][^()\n]{0,200})\)/g, (m, pre, inner) => `${pre}\\(${inner}\\)`);
+
+    return out;
 }
