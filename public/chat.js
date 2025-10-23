@@ -252,6 +252,7 @@ async function sendMessage() {
                     } else {
                         assistantMessageEl.innerHTML = renderMarkdown(visibleTextFrom(responseText));
                         highlightCode(assistantMessageEl);
+                        typesetMath(assistantMessageEl);
                     }
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 }
@@ -470,6 +471,14 @@ function typesetMath(el) {
 // Heuristic math preprocessor: support `[ ... ]` blocks and parentheses with TeX commands.
 function preprocessMath(input) {
     let out = input;
+
+    // Strip stray meta tags like <final> that may leak into content
+    out = out.replace(/<\/?final>/gi, "");
+
+    // 0) Normalize explicit TeX delimiters that Marked may eat (\\( ... \\) and \\[ ... \\])
+    //    Convert to $...$ and $$...$$ so Markdown parser won't strip backslashes.
+    out = out.replace(/\\\(([\s\S]*?)\\\)/g, (m, inner) => `$${inner}$`);
+    out = out.replace(/\\\[([\s\S]*?)\\\]/g, (m, inner) => `$$ ${inner} $$`);
 
     // 1) Block-level: a line that is just `[ ... ]` -> `$$ ... $$`
     //    Skip Markdown links like `[text](url)` or references `[id]: url`.
