@@ -183,7 +183,7 @@ test("chat routes saved credentials only to their provider and preserves CN chec
   let generations = 0;
   globalThis.fetch = async (url, options) => {
     assert.equal(options.headers.Authorization, "Bearer " + raw);
-    assert.equal(options.redirect, "error");
+    assert.equal(options.redirect, "manual");
     if (String(url).endsWith("/models")) return Response.json({ data: [{ id: "gpt-test" }] });
     generations++;
     assert.equal(url, "https://api.openai.com/v1/responses");

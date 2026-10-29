@@ -51,10 +51,14 @@ function requestScope(signal, timeout = 120000) {
 }
 async function fetchSafe(url, options) {
   let response;
-  try { response = await fetch(url, { ...options, redirect: "error" }); }
+  // Workers supports manual/follow only. Never follow a provider redirect:
+  // forwarding an authentication header could expose a user's saved API key.
+  try { response = await fetch(url, { ...options, redirect: "manual" }); }
   catch { throw issue(options.signal?.aborted ? "服务商请求已取消或超时，请重试。" : "无法连接服务商，请稍后重试。", 503); }
   if (!response.ok) {
     await response.body?.cancel().catch(() => {});
+    if (response.status >= 300 && response.status < 400)
+      throw issue("服务商返回了重定向，为保护密钥已停止连接。", 502);
     throw upstreamError(response.status);
   }
   return response;

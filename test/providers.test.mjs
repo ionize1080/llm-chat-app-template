@@ -17,7 +17,7 @@ const messages = [{ role: "system", content: "Be concise." }, { role: "user", co
 test("public OpenRouter catalog derives exact current IDs, modalities and per-million prices", async (t) => {
   mockFetch(t, async (url, init) => {
     assert.equal(url, "https://openrouter.ai/api/v1/models");
-    assert.equal(init.redirect, "error");
+    assert.equal(init.redirect, "manual");
     assert.equal(init.headers.Authorization, undefined);
     return response({ data: [
       { id: "vendor/new-model", name: "New Model", context_length: 200000, architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] }, pricing: { prompt: "0.0000025", completion: "0.00001" } },
@@ -80,6 +80,24 @@ test("registry rejects custom targets and header injection before making any req
   assert(PROVIDERS.every((p) => new URL(p.endpoint).protocol === "https:"));
 });
 
+test("Workers-compatible fetch rejects redirects without forwarding credentials", async (t) => {
+  let calls = 0, cancelled = 0;
+  mockFetch(t, async (url, init) => {
+    calls++;
+    assert.equal(new URL(url).origin, "https://api.openai.com");
+    assert.equal(init.redirect, "manual");
+    assert.equal(init.headers.Authorization, "Bearer secret-test");
+    return new Response(new ReadableStream({ cancel() { cancelled++; } }), {
+      status: 307, headers: { Location: "https://evil.example/secret-test" },
+    });
+  });
+  const rejected = (e) => e.status === 502 && !e.message.includes("secret-test") && !e.message.includes("evil.example");
+  await assert.rejects(discoverModels("openai", "secret-test"), rejected);
+  await assert.rejects(runProvider(model("openai"), "secret-test", messages, { stream: false }), rejected);
+  assert.equal(calls, 2);
+  assert.equal(cancelled, 2);
+});
+
 test("Gemini catalog follows page tokens and only keeps generateContent models", async (t) => {
   let calls = 0;
   mockFetch(t, async (url, init) => {
@@ -120,7 +138,7 @@ test("Qwen discovery uses Singapore catalog endpoint and does not assume price c
 test("OpenAI Responses conversion disables storage and preserves images/history", async (t) => {
   mockFetch(t, async (url, init) => {
     assert.equal(url, "https://api.openai.com/v1/responses");
-    assert.equal(init.redirect, "error");
+    assert.equal(init.redirect, "manual");
     const body = JSON.parse(init.body);
     assert.equal(body.store, false); assert.equal(body.max_output_tokens, 4096);
     assert.equal(body.instructions, "Be concise.");
