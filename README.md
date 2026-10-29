@@ -5,6 +5,9 @@ A Chinese-first private AI workspace at https://llm.veaix.com, built with Cloudf
 ## Features
 
 - Streaming chat: GLM 4.7 Flash, Gemma 4, Qwen 3.8 27B and Qwen 3 30B.
+- Signed-in paid models: GLM 5.3 Flash, DeepSeek V4.1 Flash, GLM 5.3 and Kimi K2.7 Code. The server validates the session and model allowlist; guest requests cannot invoke paid services.
+- Optional signed-in web search through Cloudflare Web Search / Ceramic. Source links accompany answers and saved conversations. Search sends only the latest question, excluding attached document text; it does not transmit the conversation history. Search failures are shown instead of pretending that an answer was researched.
+- An accessible custom model picker with keyboard navigation, grouped access levels, vision labels and payment labels. Original vector logo, matching favicon, and shared action geometry for links and buttons.
 - FLUX.1 Schnell image generation; Gemma 4 / Qwen 3.8 image understanding.
 - Image, text, Markdown, CSV, code and PDF attachments. Files are limited to 10 MB; extracted text is limited to 24,000 characters / 40 PDF pages. Scanned PDFs require page images. Images are resized in the browser.
 - One permitted account: `ionize@163.com`. Passwords are salted PBKDF2 hashes stored as Worker secrets. Sessions use random tokens, hashed in D1, with Secure/HttpOnly/SameSite cookies and a 7-day expiry. Login attempts are limited.
@@ -42,7 +45,11 @@ Baseline rollback version before this upgrade: `e0748e89-179d-4304-a025-a30e2c63
 
 ## Storage and limits
 
-The account's free Workers AI allocation is shared across all its applications: 10,000 Neurons per day, resetting at 00:00 UTC / 08:00 China and Singapore time. No paid model, paid plan, or external moderation service is enabled by this project. Model availability is verified against the Cloudflare catalog on 2026-10-29. The free account limit is the spending boundary; per-IP limits are additional abuse mitigation, not an exact global budget.
+The account's free Workers AI allocation is shared across all its applications: 10,000 Neurons per day, resetting at 00:00 UTC / 08:00 China and Singapore time. Ordinary models, image generation and moderation continue using this allocation, including for signed-in users. Only explicitly selected paid models and web search use the `veaix-chat` AI Gateway with prepaid Unified Billing. Gateway authentication is enabled; request logging and caching are disabled. No subscription upgrade or automatic top-up was enabled. Existing prepaid credits fund advanced calls; exhaustion produces an actionable error.
+
+Atomic D1 counters cap paid generation at 100 calls and search at 200 calls per UTC day across the site. Failed provider attempts may consume a slot. Input remains capped at 60,000 characters; paid completions are capped at 4,096 tokens including reasoning. These request caps reduce exposure but are not a dollar-denominated budget. The prepaid balance is shared with other applications. Ceramic costs $0.25 per 1,000 searches as of 2026-10-29; models are priced separately by tokens. See [Cloudflare search pricing](https://developers.cloudflare.com/web-search/providers/) and [Unified Billing](https://developers.cloudflare.com/ai-gateway/features/unified-billing/).
+
+For mainland-China requests, the existing keyword and semantic checks run before search and generation. Search uses a conservative official-source allowlist, then screens retrieved titles, URLs and excerpts before model ingestion. Answers are buffered and screened before either answer text or sources are returned. Login and paid models do not bypass this policy. The narrower source pool can produce no results; the UI states this explicitly.
 
 Guest uploads and generated images remain in the current page only. Logged-in text and upload content are included in saved conversations; generated images are private D1 media. History lists the 100 most recently updated conversations. A saved conversation is limited to 1.9 MB; save failures are visible and the current page stays available for export. Image output over 1.9 MB is temporary and must be downloaded. PDF text extraction is performed locally before extracted text is sent to Workers AI.
 
@@ -51,3 +58,5 @@ Guest uploads and generated images remain in the current page only. Logged-in te
 `npm test` covers geographic spoofing, original topics, long/obfuscated content, cross-origin writes, guest history isolation, injected system roles, fail-closed semantic checks, image policy enforcement, request bounds and answer cleanup. `test/live-smoke.mjs URL` is an explicit live integration test requiring a local ignored `.credentials.json`; it exercises login, model calls, image generation and history CRUD using synthetic data. It consumes the existing free allocation.
 
 Design refinement follows [Impeccable](https://github.com/pbakaus/impeccable): a restrained Operate/Read interface, consistent SVG icons, local assets, visible focus and responsive layouts.
+
+`node test/live-search.mjs https://<origin>` additionally verifies paid-model guest denial, all four authenticated premium models and source-bearing web search. It consumes small amounts of prepaid credits and does not save chat history. Run it explicitly only against an authorized origin.

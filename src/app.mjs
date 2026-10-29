@@ -3,6 +3,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import renderMath from "katex/contrib/auto-render";
 import { MODELS, cleanAnswer, extractText } from "./shared.mjs";
+import { publicURL } from "./search.mjs";
 const $ = (s) => document.querySelector(s);
 let user = null,
   models = MODELS,
@@ -14,6 +15,7 @@ let user = null,
   controller = null,
   history = [],
   loadingFile = false;
+let useSearch = false;
 const input = $("#input"),
   send = $("#send"),
   modelSelect = $("#model"),
@@ -55,6 +57,8 @@ function enable() {
   send.setAttribute("aria-label", busy ? "停止生成" : "发送消息");
   $("#upload").disabled = busy || mode === "image" || loadingFile;
   modelSelect.disabled = busy;
+  $("#model-trigger").disabled = busy;
+  $("#web-search").disabled = busy;
   document
     .querySelectorAll("[data-mode],#new-chat")
     .forEach((e) => (e.disabled = busy));
@@ -65,6 +69,8 @@ function scrollEnd() {
 function sidebar(open) {
   document.body.classList.toggle("sidebar-open", open);
   $("#shade").hidden = !open;
+  $("#sidebar").inert = !open && matchMedia("(max-width:760px)").matches;
+  $("#menu").setAttribute("aria-expanded", String(open));
 }
 function setMode(next) {
   if (busy) return;
@@ -75,6 +81,11 @@ function setMode(next) {
   $("#workspace-label").textContent = mode === "chat" ? "自由对话" : "图片创作";
   $(".model-control").hidden = mode === "image";
   $("#image-model").hidden = mode !== "image";
+  $("#upload").hidden = mode === "image";
+  $(".tool-divider").hidden = mode === "image";
+  $("#web-search").hidden = mode === "image";
+  closePicker();
+  paintModel();
   input.placeholder =
     mode === "image"
       ? "描述你想看见的画面，英文提示词效果更稳定…"
@@ -205,7 +216,14 @@ function render() {
         body.append(img);
       }
     } else if (!m.content && busy && index === messages.length - 1) {
-      body.innerHTML = '<span class="loading">正在思考，稍等片刻…</span>';
+      body.innerHTML =
+        '<span class="loading">' +
+        (m.search
+          ? "正在查找来源并整理回答…"
+          : mode === "image"
+            ? "正在创作画面，稍等片刻…"
+            : "正在思考，稍等片刻…") +
+        "</span>";
     } else {
       body.innerHTML = DOMPurify.sanitize(
         marked.parse(cleanAnswer(m.content)),
@@ -238,12 +256,34 @@ function render() {
       body.append(err);
     }
     node.append(meta, body);
+    if (m.sources?.length) {
+      const sources = document.createElement("details");
+      sources.className = "sources";
+      const summary = document.createElement("summary");
+      summary.textContent = "参考来源 · " + m.sources.length;
+      sources.append(summary);
+      for (const [i, source] of m.sources.slice(0, 5).entries()) {
+        const url = publicURL(source.url);
+        if (!url) continue;
+        const link = document.createElement("a");
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        const title = document.createElement("strong"),
+          host = document.createElement("small");
+        title.textContent = `${i + 1}. ${String(source.title).slice(0, 180)}`;
+        host.textContent = new URL(url).hostname;
+        link.append(title, host);
+        sources.append(link);
+      }
+      node.append(sources);
+    }
     if (m.role === "assistant" && (m.content || m.picture || m.error)) {
       const actions = document.createElement("div");
       actions.className = "message-actions";
       if (m.content) {
         const copy = document.createElement("button");
-        copy.textContent = "复制";
+        copy.innerHTML = icon("copy") + "<span>复制</span>";
         copy.onclick = () =>
           navigator.clipboard
             .writeText(cleanAnswer(m.content))
@@ -255,12 +295,12 @@ function render() {
         const download = document.createElement("a");
         download.href = m.picture;
         download.download = "veaix-" + Date.now() + ".jpg";
-        download.textContent = "↓ 下载图片";
+        download.innerHTML = icon("download") + "<span>下载图片</span>";
         actions.append(download);
       }
       if (index === messages.length - 1 && !busy) {
         const retry = document.createElement("button");
-        retry.textContent = "重新生成";
+        retry.innerHTML = icon("refresh") + "<span>重新生成</span>";
         retry.onclick = () => {
           messages.pop();
           generate(true);
@@ -393,6 +433,7 @@ async function generate(retry = false) {
     role: "assistant",
     content: "",
     model: mode === "image" ? "FLUX.1 Schnell" : selected.name,
+    search: mode === "chat" && useSearch,
   };
   messages.push(response);
   busy = true;
@@ -424,6 +465,7 @@ async function generate(retry = false) {
         method: "POST",
         body: JSON.stringify({
           model: selected.id,
+          search: useSearch,
           messages: context.map((m) => ({
             role: m.role,
             content: m.content,
@@ -459,6 +501,7 @@ async function generate(retry = false) {
             obj.error?.message || obj.error || "模型生成中断，请重试。",
           );
         response.content += extractText(obj);
+        if (Array.isArray(obj.sources)) response.sources = obj.sources;
         if (obj.choices?.[0]?.finish_reason) {
           ended = true;
           if (obj.choices[0].finish_reason === "length")
@@ -537,6 +580,7 @@ async function readFile(file) {
       attachment = { name, image: canvas.toDataURL("image/jpeg", 0.8) };
       if (!models.find((m) => m.id === modelSelect.value)?.vision) {
         modelSelect.value = "@cf/google/gemma-4-26b-a4b-it";
+        paintModel();
         toast("已切换到 Gemma 4 以读取图片");
       }
     } else {
@@ -608,6 +652,7 @@ async function readFile(file) {
     showNotice(e.message);
   } finally {
     loadingFile = false;
+    let useSearch = false;
     $("#file").value = "";
     enable();
   }
@@ -675,6 +720,7 @@ $("#login-form").onsubmit = async (e) => {
     $("#login-dialog").close();
     reset();
     account();
+    paintModel();
     await refreshHistory();
     toast("登录成功");
   } catch (err) {
@@ -687,10 +733,14 @@ $("#logout").onclick = async () => {
   try {
     await api("/api/logout", { method: "POST", body: "{}" });
     user = null;
+    useSearch = false;
+    $("#web-search").setAttribute("aria-pressed", "false");
+    modelSelect.value = MODELS[0].id;
     history = [];
     $("#account-dialog").close();
     reset();
     account();
+    paintModel();
     paintHistory();
   } catch (e) {
     toast(e.message);
@@ -779,8 +829,112 @@ for (const [selector, name] of [
 document
   .querySelectorAll("[data-prompt]>span")
   .forEach((el, i) => (el.innerHTML = icon(["idea", "book", "code"][i])));
-document.querySelector(".modal-mark").innerHTML = icon("chat");
-document.querySelector(".brand-mark").textContent = "v";
+
+document
+  .querySelectorAll("[data-icon]")
+  .forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
+$("#export").innerHTML = icon("download") + "<span>导出</span>";
+$("#model-trigger").onclick = () => {
+  if (!$("#model-picker").hidden) return closePicker();
+  paintModel();
+  $("#model-picker").hidden = false;
+  $("#model-trigger").setAttribute("aria-expanded", "true");
+  (
+    $("#model-options [aria-selected=true]") ||
+    $("#model-options button:not(:disabled)")
+  )?.focus();
+};
+function closePicker(focus = false) {
+  $("#model-picker").hidden = true;
+  $("#model-trigger").setAttribute("aria-expanded", "false");
+  if (focus) $("#model-trigger").focus();
+}
+function paintModel() {
+  let selected = models.find((m) => m.id === modelSelect.value) || models[0];
+  if (selected.paid && !user) {
+    selected = models[0];
+    modelSelect.value = selected.id;
+  }
+  $("#model-label").textContent = selected.name;
+  $("#model-trigger").title = selected.name + " · " + selected.note;
+  const root = $("#model-options");
+  root.replaceChildren();
+  for (const paid of [false, true]) {
+    const group = document.createElement("div");
+    group.setAttribute("role", "group");
+    group.setAttribute(
+      "aria-label",
+      paid ? "登录专属 · 付费" : "普通模型 · 免费额度",
+    );
+    const heading = document.createElement("div");
+    heading.className = "model-group-label";
+    heading.textContent = group.getAttribute("aria-label");
+    group.append(heading);
+    for (const m of models.filter((m) => !!m.paid === paid)) {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", String(m.id === selected.id));
+      option.disabled = paid && !user;
+      option.innerHTML = `<span class="model-option-copy"><strong>${escape(m.name)}</strong><small>${escape(m.note.split(" · ")[0])}${m.vision ? " · 可看图" : ""}</small></span><span class="model-option-status">${paid && !user ? icon("lock") : m.id === selected.id ? icon("check") : paid ? "付费" : ""}</span>`;
+      option.onclick = () => {
+        modelSelect.value = m.id;
+        paintModel();
+        closePicker(true);
+      };
+      group.append(option);
+    }
+    root.append(group);
+  }
+  $("#model-login").hidden = !!user;
+  $("#web-search").title = user
+    ? "联网搜索 · 消耗站点付费余额"
+    : "登录后使用联网搜索";
+}
+$("#model-login").onclick = () => {
+  closePicker();
+  $("#login-dialog").showModal();
+};
+$("#web-search").onclick = () => {
+  if (!user) {
+    $("#login-dialog").showModal();
+    return;
+  }
+  useSearch = !useSearch;
+  $("#web-search").setAttribute("aria-pressed", String(useSearch));
+  toast(useSearch ? "已开启联网搜索 · 使用站点付费余额" : "已关闭联网搜索");
+};
+$("#model-picker").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    closePicker(true);
+    return;
+  }
+  const options = [
+    ...document.querySelectorAll("#model-options button:not(:disabled)"),
+  ];
+  const i = options.indexOf(document.activeElement);
+  const next =
+    e.key === "ArrowDown"
+      ? (i + 1) % options.length
+      : e.key === "ArrowUp"
+        ? (i - 1 + options.length) % options.length
+        : e.key === "Home"
+          ? 0
+          : e.key === "End"
+            ? options.length - 1
+            : -1;
+  if (next >= 0) {
+    e.preventDefault();
+    options[next].focus();
+  }
+});
+document.addEventListener("pointerdown", (e) => {
+  if (!e.target.closest(".model-control")) closePicker();
+});
+document.addEventListener("focusin", (e) => {
+  if (!e.target.closest(".model-control")) closePicker();
+});
 matchMedia("(max-width:760px)").addEventListener("change", () =>
   sidebar(false),
 );

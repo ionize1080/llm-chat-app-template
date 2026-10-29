@@ -7,6 +7,7 @@ import {
   readJSON,
 } from "./shared.mjs";
 import { CN_SYSTEM_PROMPT, forbidden } from "./moderation.mjs";
+import { webSearch, searchContext, dailyAllowance } from "./search.mjs";
 const EMAIL = "ionize@163.com";
 const json = (data, status = 200, headers = {}) =>
   Response.json(data, {
@@ -157,7 +158,7 @@ async function moderate(env, messages) {
   });
   return cleanAnswer(extractText(result)).trim() === "ALLOW";
 }
-function params(model, messages, cn, stream) {
+function params(model, messages, cn, stream, sources = []) {
   const p = {
     messages: [
       {
@@ -176,11 +177,17 @@ function params(model, messages, cn, stream) {
     p.chat_template_kwargs = { enable_thinking: false };
   }
   if (model.includes("qwen3.8")) p.reasoning_effort = "low";
+  if (MODELS.find((m) => m.id === model)?.paid) {
+    delete p.chat_template_kwargs;
+    p.max_completion_tokens = 4096;
+    if (!model.includes("kimi")) p.reasoning_effort = "low";
+  }
+  if (sources.length) p.messages[0].content += searchContext(sources);
   return p;
 }
-function sseText(text) {
+function sseText(text, sources = []) {
   return new Response(
-    `data: ${JSON.stringify({ response: text })}\n\ndata: [DONE]\n\n`,
+    `data: ${JSON.stringify({ response: text, sources })}\n\ndata: [DONE]\n\n`,
     {
       headers: {
         "Content-Type": "text/event-stream",
@@ -189,49 +196,95 @@ function sseText(text) {
     },
   );
 }
-async function chat(request, env, ip) {
+async function chat(request, env, ip, user) {
   await rate(env.RATE, ip);
   const b = await readJSON(request);
   const messages = validMessages(b.messages);
-  const model = MODELS.find((m) => m.id === b.model) || MODELS[0];
+  const model = b.model ? MODELS.find((m) => m.id === b.model) : MODELS[0];
+  if (!model) return json({ error: "模型不存在，请刷新页面。" }, 400);
+  if ((model.paid || b.search === true) && !user)
+    return json({ error: "联网搜索和付费模型仅限登录用户使用。" }, 403);
   if (messages.some((m) => m.image) && !model.vision)
     return json({ error: "请使用 Gemma 4 或 Qwen 3.8 阅读图片。" }, 400);
   const cn = isCN(request);
   if (cn && !(await moderate(env, messages))) return sseText(REFUSAL);
+  let sources = [];
+  if (b.search === true) {
+    sources = await webSearch(env, messages.at(-1).content, cn);
+    if (!sources.length)
+      return sseText(
+        cn
+          ? "没有找到符合当前地区内容规则的可信来源。你可以换个关键词，或关闭联网继续对话。"
+          : "这次搜索没有找到可用来源。请换个关键词再试，或关闭联网继续对话。",
+      );
+    if (
+      cn &&
+      !(await moderate(env, [
+        { role: "user", content: JSON.stringify(sources) },
+      ]))
+    )
+      return sseText(REFUSAL);
+  }
+  const options = model.paid
+    ? { gateway: { id: env.AI_GATEWAY_ID, skipCache: true } }
+    : {};
+  if (model.paid) await dailyAllowance(env, "premium", 100);
   if (cn) {
     const result = await env.AI.run(
       model.id,
-      params(model.id, messages, true, false),
+      params(model.id, messages, true, false, sources),
+      options,
     );
     const answer = cleanAnswer(extractText(result));
     if (!answer) throw new Error("模型暂时没有返回内容，请重试。");
-    return sseText(
+    if (
       forbidden(answer) ||
-        !(await moderate(env, [{ role: "user", content: answer }]))
-        ? REFUSAL
-        : answer,
-    );
+      !(await moderate(env, [{ role: "user", content: answer }]))
+    )
+      return sseText(REFUSAL);
+    return sseText(answer, sources);
   }
   const stream = await env.AI.run(
     model.id,
-    params(model.id, messages, false, true),
+    params(model.id, messages, false, true, sources),
+    options,
   );
-  if (stream instanceof ReadableStream)
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-store",
+  const body = stream instanceof Response ? stream.body : stream;
+  if (body instanceof ReadableStream) {
+    const reader = body.getReader();
+    const encoder = new TextEncoder();
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ sources })}\n\n`),
+          );
+        },
+        async pull(controller) {
+          try {
+            const { done, value } = await reader.read();
+            if (done) controller.close();
+            else controller.enqueue(value);
+          } catch {
+            controller.enqueue(
+              encoder.encode('data: {"error":"模型连接中断，请重试。"}\n\n'),
+            );
+            controller.close();
+          }
+        },
+        cancel(reason) {
+          return reader.cancel(reason);
+        },
+      }),
+      {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-store",
+        },
       },
-    });
-  if (stream instanceof Response)
-    return new Response(stream.body, {
-      status: stream.status,
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-store",
-      },
-    });
-  return sseText(cleanAnswer(extractText(stream)));
+    );
+  }
+  return sseText(cleanAnswer(extractText(stream)), sources);
 }
 async function generateImage(request, env, ip, user) {
   await rate(env.IMAGE_RATE, ip);
@@ -303,7 +356,7 @@ export default {
         return json({ ok: true }, 200, { "Set-Cookie": cookie("", 0) });
       }
       if (path === "/api/chat" && request.method === "POST")
-        return await chat(request, env, ip);
+        return await chat(request, env, ip, user);
       if (path === "/api/image" && request.method === "POST")
         return await generateImage(request, env, ip, user);
       if (path.startsWith("/api/history") || path.startsWith("/api/media/")) {
@@ -399,6 +452,13 @@ export default {
         }),
       );
       const msg = String(e.message || "");
+      if (/credit|billing|payment|paid plan|402/i.test(msg))
+        return json(
+          {
+            error: "付费余额不足或服务尚未开通，请切换普通模型并关闭联网搜索。",
+          },
+          402,
+        );
       if (/quota|neurons|daily|limit|10000/i.test(msg))
         return json(
           {

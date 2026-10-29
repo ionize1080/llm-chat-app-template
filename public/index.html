@@ -21,9 +21,19 @@
     <button class="shade" id="shade" aria-label="关闭侧边栏" hidden></button>
     <aside id="sidebar">
       <a class="brand" href="/" aria-label="VEAIX 首页"
-        ><span class="brand-mark">v<span>✳</span></span
-        ><span>VEAIX</span></a
-      >
+        ><img
+          class="brand-mark"
+          src="/logo-mark.svg"
+          alt=""
+          width="40"
+          height="40" />
+        <img
+          class="brand-wordmark"
+          src="/logo-wordmark.svg"
+          alt="VEAIX"
+          width="116"
+          height="24"
+      /></a>
       <button id="new-chat" class="new-chat">
         <span>＋</span> 开启新对话 <kbd>⌘ K</kbd>
       </button>
@@ -49,8 +59,8 @@
       </div>
       <div class="sidebar-bottom">
         <div class="quota-card">
-          <span class="status-dot"></span> Cloudflare 免费额度<small
-            >聊天与图片共享每日额度<br />北京时间 08:00 重置</small
+          <span class="status-dot"></span> 普通模型 · 免费额度<small
+            >登录可用联网与付费模型<br />每日限额北京时间 08:00 重置</small
           >
         </div>
         <button id="account" class="account">
@@ -129,11 +139,48 @@
                 title="图片、PDF、TXT、Markdown、CSV 或代码文件"
               >
                 ＋</button
-              ><span class="tool-divider"></span
-              ><label class="model-control"
-                ><span class="status-dot"></span
-                ><select id="model" aria-label="选择模型"></select></label
-              ><span id="image-model" hidden>FLUX.1 Schnell</span>
+              ><span class="tool-divider"></span>
+              <div class="model-control">
+                <select
+                  id="model"
+                  hidden
+                  aria-hidden="true"
+                  tabindex="-1"
+                ></select>
+                <button
+                  id="model-trigger"
+                  aria-haspopup="listbox"
+                  aria-expanded="false"
+                  aria-controls="model-picker"
+                >
+                  <span class="status-dot"></span
+                  ><span id="model-label">选择模型</span
+                  ><span data-icon="chevron"></span>
+                </button>
+                <div id="model-picker" class="model-picker" hidden>
+                  <div class="picker-heading">选择适合这一刻的模型</div>
+                  <div
+                    id="model-options"
+                    role="listbox"
+                    aria-label="选择模型"
+                  ></div>
+                  <p class="picker-note">
+                    普通模型使用免费额度。付费模型从站点余额扣费。
+                  </p>
+                  <button id="model-login" class="text-btn" hidden>
+                    登录解锁高级模型
+                  </button>
+                </div>
+              </div>
+              <span id="image-model" hidden>FLUX.1 Schnell</span>
+              <button
+                id="web-search"
+                class="search-toggle"
+                aria-pressed="false"
+                title="联网搜索 · 登录专属"
+              >
+                <span data-icon="globe"></span><span>联网</span>
+              </button>
             </div>
             <button id="send" class="send" aria-label="发送消息" disabled>
               ↑
@@ -158,7 +205,13 @@
     <dialog id="login-dialog">
       <form id="login-form">
         <button type="button" class="dialog-close" aria-label="关闭">×</button>
-        <div class="modal-mark">✳</div>
+        <img
+          class="modal-mark"
+          src="/logo-mark.svg"
+          alt=""
+          width="48"
+          height="48"
+        />
         <h2>欢迎回到 VEAIX</h2>
         <p>登录，让每次对话都有迹可循。</p>
         <label

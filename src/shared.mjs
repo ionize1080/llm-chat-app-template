@@ -23,6 +23,34 @@ export const MODELS = [
     note: "轻量推理 · 高效对话",
     vision: false,
   },
+  {
+    id: "@cf/zai-org/glm-5.3-flash",
+    name: "GLM 5.3 Flash",
+    note: "高级多模态 · 付费",
+    vision: true,
+    paid: true,
+  },
+  {
+    id: "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+    name: "DeepSeek V4.1 Flash",
+    note: "深度推理 · 付费",
+    vision: true,
+    paid: true,
+  },
+  {
+    id: "@cf/zai-org/glm-5.3",
+    name: "GLM 5.3",
+    note: "复杂任务 · 付费",
+    vision: false,
+    paid: true,
+  },
+  {
+    id: "@cf/moonshotai/kimi-k2.7-code",
+    name: "Kimi K2.7 Code",
+    note: "编程与看图 · 付费",
+    vision: true,
+    paid: true,
+  },
 ];
 export const REFUSAL =
   "抱歉，我无法就该话题提供帮助。我们可以讨论编程实践、通用文学鉴赏或旅行计划等话题。";
