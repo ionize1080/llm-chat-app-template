@@ -41,6 +41,8 @@ The production D1 ID is configured in `wrangler.jsonc`. Set `AUTH_SALT` and `AUT
 
 Cloudflare Workers Builds is connected to `ionize1080/llm-chat-app-template`, branch `main`, deploy command `npm run deploy`. Deployments retain existing Worker secrets. Run tests and packaging checks before pushing. Manual deployment uses `npm run deploy`.
 
+The image workspace has a direct URL: `https://llm.veaix.com/?mode=image`. Workspace switches update this parameter, so refreshes retain the selected workspace. A zone-level Single Redirect sends all `img.veaix.com` requests (HTTP/HTTPS, any path) to that URL with status 301, discarding old paths and query parameters. Its declaration is in `cloudflare/img-redirect.json`; it is managed separately from Worker deployment. Zone: `d859388f7b21f5bcb65de5fcc2bbc2c5`; ruleset: `cfecfc6a0398462db6e69e1322306787`; rule: `b00de71288564dff94bb8f1fec192dea`. The previous root-domain redirect is preserved. To undo the domain migration, disable this specific rule; the original image Worker and DNS binding remain available.
+
 Baseline rollback version before this upgrade: `e0748e89-179d-4304-a025-a30e2c63b571`. Code rollback does not roll back D1 data. Restore compatible secrets and schema as necessary.
 
 ## Storage and limits

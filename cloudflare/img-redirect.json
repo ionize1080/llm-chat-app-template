@@ -1,0 +1,14 @@
+{
+  "action": "redirect",
+  "action_parameters": {
+    "from_value": {
+      "target_url": { "value": "https://llm.veaix.com/?mode=image" },
+      "status_code": 301,
+      "preserve_query_string": false
+    }
+  },
+  "description": "Legacy img site to VEAIX image creation",
+  "enabled": true,
+  "expression": "http.host eq \"img.veaix.com\"",
+  "ref": "veaix_legacy_img_redirect"
+}

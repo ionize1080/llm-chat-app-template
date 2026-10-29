@@ -75,6 +75,10 @@ function sidebar(open) {
 function setMode(next) {
   if (busy) return;
   mode = next;
+  const url = new URL(location.href);
+  if (mode === "image") url.searchParams.set("mode", "image");
+  else url.searchParams.delete("mode");
+  window.history.replaceState(null, "", url);
   document
     .querySelectorAll("[data-mode]")
     .forEach((e) => e.classList.toggle("active", e.dataset.mode === mode));
@@ -792,6 +796,11 @@ document.addEventListener("drop", (e) => {
   if (mode === "chat") readFile(e.dataTransfer.files[0]);
 });
 async function init() {
+  setMode(
+    new URL(location.href).searchParams.get("mode") === "image"
+      ? "image"
+      : "chat",
+  );
   try {
     const b = await (await api("/api/me")).json();
     user = b.email;
@@ -810,7 +819,7 @@ async function init() {
   );
   account();
   await refreshHistory();
-  setMode("chat");
+  setMode(mode);
   enable();
 }
 for (const [selector, name] of [
