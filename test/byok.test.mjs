@@ -165,6 +165,44 @@ test("lazy table initialization is single-flight and retries transient failures"
   assert.equal(calls, 2);
 });
 
+test("aborting the first visitor cannot cancel a shared public catalog refresh", async () => {
+  const original = globalThis.fetch;
+  const visitor = new AbortController();
+  let upstreamSignal, release, started, calls = 0;
+  const began = new Promise((resolve) => { started = resolve; });
+  globalThis.fetch = async (_url, options) => {
+    calls++;
+    upstreamSignal = options.signal;
+    started();
+    return new Promise((resolve, reject) => {
+      release = resolve;
+      upstreamSignal.addEventListener("abort", () => reject(new Error("upstream cancelled")), { once: true });
+    });
+  };
+  let first, second;
+  try {
+    first = getCatalog(environment(), null, true, visitor.signal);
+    await began;
+    second = getCatalog(environment(), null, true, new AbortController().signal);
+    visitor.abort();
+    assert.equal(upstreamSignal.aborted, false);
+    release(Response.json({ data: [{
+      id: "vendor/shared-public-model", name: "Shared public model",
+      architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+    }] }));
+    const results = await Promise.all([first, second]);
+    assert.equal(calls, 1);
+    for (const result of results) {
+      assert.equal(result.catalog.status, "live");
+      assert(result.models.some((m) => m.id === "openrouter:vendor/shared-public-model"));
+    }
+  } finally {
+    release?.(Response.json({ data: [] }));
+    await Promise.allSettled([first, second].filter(Boolean));
+    globalThis.fetch = original;
+  }
+});
+
 test("catalog retains built-in models if BYOK storage is unavailable", async () => {
   const env = { BYOK_ENCRYPTION_KEY: secret, DB: { prepare() { return { async run() { throw new Error("DB down"); } }; } } };
   const result = await getCatalog(env, owner);

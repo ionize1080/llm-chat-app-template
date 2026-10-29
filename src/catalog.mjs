@@ -18,7 +18,7 @@ export function clearProviderCatalog(owner, provider) {
   }
 }
 
-async function publicCatalog(force, signal) {
+async function publicCatalog(force) {
   const now = Date.now();
   if (publicCache && !force && now - publicCache.updatedAt < TTL)
     return { ...publicCache, status: "cached", stale: false };
@@ -27,10 +27,12 @@ async function publicCatalog(force, signal) {
     return publicCache && now - publicCache.updatedAt < MAX_STALE
       ? { ...publicCache, status: "stale", stale: true, error: "上游目录暂不可用，显示上次同步结果。" }
       : { models: [], updatedAt: null, status: "unavailable", stale: true, error: lastPublicError || "模型目录暂不可用，请稍后刷新。" };
-  // No user key is ever sent on this public-directory request.
+  // No user key is ever sent on this public-directory request. It is shared by
+  // concurrent visitors, so only the adapter's own 30-second timeout may abort
+  // it; tying it to one visitor's signal would cancel everyone else's refresh.
   publicPending = (async () => {
     try {
-      const models = await discoverModels("openrouter", undefined, signal);
+      const models = await discoverModels("openrouter");
       publicCache = { models, updatedAt: Date.now() };
       retryAfter = 0;
       lastPublicError = null;
@@ -71,7 +73,7 @@ export const builtinModels = () => MODELS.map((m) => ({
 export async function getCatalog(env, owner, force = false, signal) {
   let storageError = null;
   const [publicResult, keys] = await Promise.all([
-    publicCatalog(force, signal), owner ? listKeys(env, owner).catch(() => {
+    publicCatalog(force), owner ? listKeys(env, owner).catch(() => {
       storageError = "保存的连接暂不可用，请稍后重试。";
       return [];
     }) : [],
@@ -110,7 +112,7 @@ export async function resolveRemoteModel(env, owner, id, signal) {
   providerInfo(parsed.provider);
   const credential = await getKey(env, owner, parsed.provider);
   const models = parsed.provider === "openrouter"
-    ? (await publicCatalog(false, signal)).models
+    ? (await publicCatalog(false)).models
     : await nativeCatalog(env, owner, parsed.provider, false, signal);
   const model = models.find((m) => m.id === id);
   if (!model) throw Object.assign(new Error("该模型已下线或当前密钥没有访问权限，请刷新模型目录。"), { status: 400 });

@@ -1,8 +1,7 @@
 import { icon } from "./icons.mjs";
 import { initModelHub } from "./model-ui.mjs";
-import { marked } from "marked";
 import DOMPurify from "dompurify";
-import renderMath from "katex/contrib/auto-render";
+import { parseMathMarkdown, renderMathHTML } from "./math-markdown.mjs";
 import { MODELS, cleanAnswer, extractText } from "./shared.mjs";
 import { publicURL } from "./search.mjs";
 const $ = (s) => document.querySelector(s);
@@ -238,8 +237,9 @@ function render() {
             : "正在思考，稍等片刻…") +
         "</span>";
     } else {
+      const parsed = parseMathMarkdown(cleanAnswer(m.content));
       body.innerHTML = DOMPurify.sanitize(
-        marked.parse(cleanAnswer(m.content)),
+        parsed.html,
         {
           FORBID_TAGS: ["img", "iframe", "style", "form", "input", "button"],
           FORBID_ATTR: ["style"],
@@ -249,18 +249,20 @@ function render() {
         a.target = "_blank";
         a.rel = "noopener noreferrer";
       });
-      try {
-        renderMath(body, {
-          delimiters: [
-            { left: "$$", right: "$$", display: true },
-            { left: "\\[", right: "\\]", display: true },
-            { left: "\\(", right: "\\)", display: false },
-            { left: "$", right: "$", display: false },
-          ],
-          throwOnError: false,
-          trust: false,
-        });
-      } catch {}
+      body.querySelectorAll("[data-veaix-math]").forEach((slot) => {
+        const index = Number(slot.getAttribute("data-veaix-math"));
+        slot.removeAttribute("data-veaix-math");
+        if (!Number.isInteger(index) || index < 0 || !parsed.math[index]) return;
+        if (slot.closest("code,pre,textarea,script,style")) {
+          slot.textContent = parsed.math[index].tex;
+          return;
+        }
+        try {
+          slot.innerHTML = renderMathHTML(parsed.math[index]);
+        } catch {
+          slot.textContent = parsed.math[index].tex;
+        }
+      });
     }
     if (m.error) {
       const err = document.createElement("p");
