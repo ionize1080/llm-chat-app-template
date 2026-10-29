@@ -7,6 +7,7 @@ const MAX_STALE = 24 * 60 * 60 * 1000;
 let publicCache = null;
 let publicPending = null;
 let retryAfter = 0;
+let lastPublicError = null;
 // Private catalog entries contain no credentials and are partitioned by the account,
 // provider and encrypted-key revision. They never enter the public Cache API.
 const privateCatalogs = new Map();
@@ -25,19 +26,25 @@ async function publicCatalog(force, signal) {
   if (now < retryAfter && !force)
     return publicCache && now - publicCache.updatedAt < MAX_STALE
       ? { ...publicCache, status: "stale", stale: true, error: "上游目录暂不可用，显示上次同步结果。" }
-      : { models: [], updatedAt: null, status: "unavailable", stale: true, error: "模型目录暂不可用，请稍后刷新。" };
+      : { models: [], updatedAt: null, status: "unavailable", stale: true, error: lastPublicError || "模型目录暂不可用，请稍后刷新。" };
   // No user key is ever sent on this public-directory request.
   publicPending = (async () => {
     try {
       const models = await discoverModels("openrouter", undefined, signal);
       publicCache = { models, updatedAt: Date.now() };
       retryAfter = 0;
+      lastPublicError = null;
       return { ...publicCache, status: "live", stale: false };
-    } catch {
+    } catch (error) {
+      // Provider adapters deliberately sanitize their errors. Never expose raw
+      // upstream response bodies, credentials, stacks, or unexpected exceptions.
+      lastPublicError = Number.isInteger(error.status)
+        ? `目录同步失败（${error.status}）：${error.message}`
+        : "模型目录解析失败，请稍后刷新。";
       retryAfter = Date.now() + 30000;
       return publicCache && Date.now() - publicCache.updatedAt < MAX_STALE
         ? { ...publicCache, status: "stale", stale: true, error: "上游目录暂不可用，显示上次同步结果。" }
-        : { models: [], updatedAt: null, status: "unavailable", stale: true, error: "模型目录暂不可用，请稍后刷新。" };
+        : { models: [], updatedAt: null, status: "unavailable", stale: true, error: lastPublicError };
     } finally { publicPending = null; }
   })();
   return publicPending;
