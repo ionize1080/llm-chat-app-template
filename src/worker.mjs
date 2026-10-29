@@ -210,7 +210,7 @@ async function chat(request, env, ip, user) {
   if (cn && !(await moderate(env, messages))) return sseText(REFUSAL);
   let sources = [];
   if (b.search === true) {
-    sources = await webSearch(env, messages.at(-1).content, cn);
+    sources = await webSearch(env, messages.at(-1).content, cn, moderate);
     if (!sources.length)
       return sseText(
         cn

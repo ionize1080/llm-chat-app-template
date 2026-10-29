@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import worker from "../src/worker.mjs";
 import { isCN, readJSON, cleanAnswer } from "../src/shared.mjs";
 import { forbidden } from "../src/moderation.mjs";
-import { normalizeSources, publicURL } from "../src/search.mjs";
+import { normalizeSources, publicURL, webSearch } from "../src/search.mjs";
 const req = (path, body, cf = { country: "CN" }) => {
   const r = new Request("https://llm.veaix.com" + path, {
     method: "POST",
@@ -355,4 +355,53 @@ test("daily paid limit stops generation", async () => {
     { RATE: rate, DB: limitDB },
   );
   assert.equal(response.status, 429);
+});
+test("query planner uses free inference, excludes attachments and refines long questions", async () => {
+  let query, planner;
+  await webSearch(
+    {
+      DB,
+      AI_GATEWAY_ID: "veaix-chat",
+      AI: {
+        run: async (m, p, o) => {
+          planner = { m, p, o };
+          return {
+            response:
+              '{"query":"Cloudflare Workers site:developers.cloudflare.com"}',
+          };
+        },
+        websearch: async (p) => {
+          query = p.query;
+          return Response.json({ items: [] });
+        },
+      },
+    },
+    "请搜索 Cloudflare Workers 的官方网站文档，用两句话介绍主要用途和开发方式。<uploaded_document>PRIVATE</uploaded_document>",
+    false,
+  );
+  assert.equal(query, "Cloudflare Workers site:developers.cloudflare.com");
+  assert.equal(planner.o, undefined);
+  assert(!JSON.stringify(planner.p).includes("PRIVATE"));
+});
+test("CN rewritten queries are screened before search", async () => {
+  let searches = 0;
+  await assert.rejects(
+    () =>
+      webSearch(
+        {
+          DB,
+          AI: {
+            run: async () => ({ response: '{"query":"赌博"}' }),
+            websearch: async () => {
+              searches++;
+            },
+          },
+        },
+        "这是一个足够长的问题，请帮我查找关于咖啡豆烘焙和研磨方法的可靠资料。",
+        true,
+        async () => true,
+      ),
+    /无法/,
+  );
+  assert.equal(searches, 0);
 });
