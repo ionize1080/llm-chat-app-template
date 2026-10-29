@@ -1,27 +1,48 @@
-/**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
- */ {
+{
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "llm-chat-app-template",
+  "account_id": "9e7dc30189a7850a649886ffa37182ee",
   "main": "src/index.ts",
-  "compatibility_date": "2025-04-01",
-  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "compatibility_date": "2026-10-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "build": { "command": "npm run build" },
   "assets": {
     "binding": "ASSETS",
-    "directory": "./public"
+    "directory": "./public",
+    "run_worker_first": ["/api/*"],
   },
+  "ai": { "binding": "AI" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "veaix-chat",
+      "database_id": "5c5d0f01-94e5-41c0-a688-b1dda9e82bbc",
+    },
+  ],
+  "ratelimits": [
+    {
+      "name": "RATE",
+      "namespace_id": "102901",
+      "simple": { "limit": 12, "period": 60 },
+    },
+    {
+      "name": "LOGIN_RATE",
+      "namespace_id": "102902",
+      "simple": { "limit": 5, "period": 60 },
+    },
+    {
+      "name": "IMAGE_RATE",
+      "namespace_id": "102903",
+      "simple": { "limit": 2, "period": 60 },
+    },
+  ],
   "observability": {
-    "enabled": true
-  },
-  "ai": {
-    "binding": "AI"
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 0.1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 },
   },
   "upload_source_maps": true,
-  "routes": [
-    {
-      "pattern": "llm.veaix.com",
-      "custom_domain": true
-    }
-  ]
+  "workers_dev": false,
+  "preview_urls": true,
+  "routes": [{ "pattern": "llm.veaix.com", "custom_domain": true }],
 }

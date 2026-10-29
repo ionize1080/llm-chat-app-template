@@ -1,441 +1,197 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LLM Chat App</title>
-    <style>
-        :root {
-            --primary-color: #f6821f;
-            --primary-hover: #e67e22;
-            --light-bg: #f9fafb;
-            --border-color: #e5e7eb;
-            --text-color: #1f2937;
-            --text-light: #6b7280;
-            --user-msg-bg: #fff2e6;
-            --assistant-msg-bg: #f3f4f6;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            color: var(--text-color);
-            width: min(90%, 1024px);
-            margin: 0 auto;
-            padding: 1rem;
-        }
-
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            text-align: left;
-            margin-bottom: 0.5rem;
-            padding: 0.5rem 0;
-            border-bottom: 1px solid var(--border-color);
-            gap: 0.75rem;
-        }
-
-        h1 {
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: var(--primary-color);
-        }
-
-        header p {
-            font-size: 0.75rem;
-            color: var(--text-light);
-        }
-
-        .header-right {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .model-select-wrapper {
-            display: flex;
-            align-items: center;
-            font-size: 0.9rem;
-            color: var(--text-light);
-        }
-
-        .model-select {
-            margin-left: 0.25rem;
-            padding: 0.25rem 0.5rem;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            font-family: inherit;
-            color: var(--text-color);
-            background: white;
-        }
-
-        .ghost-btn {
-            padding: 0.35rem 0.65rem;
-            font-size: 0.85rem;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            background: #fff;
-            color: var(--text-color);
-            cursor: pointer;
-            transition: background 0.2s, border-color 0.2s;
-        }
-
-            .ghost-btn:hover {
-                background: #fffefe;
-                border-color: #d1d5db;
-            }
-
-            .ghost-btn.active {
-                border-color: var(--primary-color);
-                color: var(--primary-color);
-                background: #fff8f1;
-            }
-
-        .chat-container {
-            display: flex;
-            flex-direction: column;
-            height: calc(100dvh - 160px);
-            min-height: 400px;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            overflow: hidden;
-        }
-
-        .chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 1rem;
-            background-color: var(--light-bg);
-        }
-
-        .message {
-            margin-bottom: 1rem;
-            padding: 0.75rem;
-            border-radius: 8px;
-            max-width: 95%;
-            overflow-wrap: break-word;
-            word-break: break-word;
-            font-size: 0.9rem;
-        }
-
-        .user-message {
-            background-color: var(--user-msg-bg);
-            align-self: flex-end;
-            margin-left: auto;
-        }
-
-        .assistant-message {
-            background-color: var(--assistant-msg-bg);
-            align-self: flex-start;
-        }
-
-        .message-input {
-            display: flex;
-            align-items: flex-end;
-            gap: 0.75rem;
-            padding: 1rem;
-            border-top: 1px solid rgba(148, 163, 184, 0.25);
-            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-            margin-top: 0.5rem;
-        }
-
-        #user-input {
-            flex: 1;
-            padding: 0.85rem 1rem;
-            border: none;
-            border-radius: 16px;
-            font-family: inherit;
-            resize: none;
-            min-height: 44px;
-            line-height: 1.5;
-            background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
-            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.3), 0 8px 24px -18px rgba(15, 23, 42, 0.35);
-            transition: box-shadow 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
-        }
-
-        #user-input:focus {
-            outline: none;
-            background: #ffffff;
-            box-shadow: 0 0 0 2px rgba(246, 130, 31, 0.2), 0 14px 32px -20px rgba(15, 23, 42, 0.45);
-            transform: translateY(-1px);
-        }
-
-        #user-input::placeholder {
-            color: rgba(100, 116, 139, 0.8);
-        }
-
-        #send-button {
-            margin-left: 0;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 46px;
-            padding: 0 1.15rem;
-            background-color: var(--primary-color);
-            color: white;
-            border: none;
-            border-radius: 14px;
-            cursor: pointer;
-            font-weight: 600;
-            letter-spacing: 0.01em;
-            transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-            box-shadow: 0 10px 24px -16px rgba(246, 130, 31, 0.65);
-        }
-
-            #send-button:hover {
-                background-color: var(--primary-hover);
-                transform: translateY(-1px);
-                box-shadow: 0 16px 32px -20px rgba(246, 130, 31, 0.7);
-            }
-
-            #send-button:disabled {
-                background-color: var(--text-light);
-                cursor: not-allowed;
-                transform: none;
-                box-shadow: none;
-            }
-
-        .typing-indicator {
-            display: none;
-            margin-bottom: 1rem;
-            font-style: italic;
-            color: var(--text-light);
-        }
-
-            .typing-indicator.visible {
-                display: block;
-            }
-
-        pre {
-            position: relative;
-            padding: 0.5rem;
-            border-radius: 4px;
-            width: 100%;
-            overflow: visible;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-
-        .copy-btn {
-            position: absolute;
-            top: 0;
-            right: 0;
-            font-size: 0.75rem;
-            padding: 2px 6px;
-            border: none;
-            border-radius: 4px;
-            background: rgba(0,0,0,0.4);
-            color: #fff;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-            .copy-btn:hover {
-                background: rgba(0,0,0,0.6);
-            }
-
-        code {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-        }
-
-        /* ===== Markdown 排版优化（仅 assistant 区域）===== */
-        .assistant-message {
-            line-height: 1.75;
-        }
-
-            .assistant-message :is(p, ul, ol, pre, blockquote, table) {
-                margin: 0.6rem 0;
-            }
-
-            .assistant-message h1 {
-                font-size: 1.15rem;
-                font-weight: 700;
-                margin: 0.8rem 0 0.5rem;
-            }
-
-            .assistant-message h2 {
-                font-size: 1.05rem;
-                font-weight: 700;
-                margin: 0.75rem 0 0.5rem;
-            }
-
-            .assistant-message h3 {
-                font-size: 1rem;
-                font-weight: 700;
-                margin: 0.7rem 0 0.45rem;
-            }
-
-            .assistant-message h4 {
-                font-size: 0.95rem;
-                font-weight: 700;
-                margin: 0.6rem 0 0.4rem;
-            }
-
-            .assistant-message ul, .assistant-message ol {
-                padding-left: 1.25rem;
-                list-style-position: outside;
-            }
-
-            .assistant-message ul {
-                list-style-type: disc;
-            }
-
-            .assistant-message ol {
-                list-style-type: decimal;
-            }
-
-            .assistant-message li + li {
-                margin-top: 0.25rem;
-            }
-
-            .assistant-message li > ul, .assistant-message li > ol {
-                margin-top: 0.25rem;
-            }
-
-            .assistant-message blockquote {
-                padding: 0.5rem 0.75rem;
-                border-left: 3px solid #e5e7eb;
-                background: #f9fafb;
-                color: #4b5563;
-                border-radius: 4px;
-            }
-
-            .assistant-message table {
-                width: 100%;
-                border-collapse: collapse;
-                overflow: hidden;
-                border: 1px solid var(--border-color);
-                border-radius: 6px;
-            }
-
-            .assistant-message th, .assistant-message td {
-                border: 1px solid var(--border-color);
-                padding: 6px 10px;
-                text-align: left;
-                vertical-align: top;
-            }
-
-            .assistant-message thead th {
-                background: #f3f4f6;
-                font-weight: 700;
-            }
-
-            .assistant-message :not(pre) > code {
-                background: #f3f4f6;
-                padding: 0.1rem 0.3rem;
-                border-radius: 4px;
-                font-size: 0.9em;
-            }
-
-            .assistant-message pre {
-                background: #0b1020;
-                color: #e6edf3;
-                padding: 0.75rem;
-                border-radius: 6px;
-                overflow: auto;
-            }
-
-        /* 原始 SSE 复制/下载条 */
-        .sse-copy-bar {
-            margin-top: 0.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.75rem;
-            padding: 0.5rem 0.6rem;
-            border: 1px dashed var(--border-color);
-            border-radius: 6px;
-            background: #fff;
-            color: var(--text-light);
-        }
-
-            .sse-copy-bar .left {
-                font-size: 0.82rem;
-            }
-
-            .sse-copy-bar .right {
-                display: flex;
-                gap: 0.5rem;
-            }
-
-                .sse-copy-bar .right button {
-                    font-size: 0.82rem;
-                    padding: 0.25rem 0.55rem;
-                    border-radius: 6px;
-                    border: 1px solid var(--border-color);
-                    background: #fff;
-                    color: var(--text-color);
-                    cursor: pointer;
-                    transition: background 0.2s, border-color 0.2s;
-                }
-
-                    .sse-copy-bar .right button:hover {
-                        background: #fffefe;
-                        border-color: #d1d5db;
-                    }
-    </style>
-</head>
-<body>
-    <header>
-        <h1>Cloudflare AI Chat</h1>
-        <div class="header-right">
-            <div class="model-select-wrapper">
-                <label for="model-select">Model:</label>
-                <select id="model-select" class="model-select">
-                    <option value="@cf/meta/llama-3.3-70b-instruct-fp8-fast">llama-3.3-70b-instruct-fp8-fast</option>
-                    <option value="@cf/openai/gpt-oss-120b" selected>gpt-oss-120b</option>
-                    <option value="@cf/openai/gpt-oss-20b">gpt-oss-20b</option>
-                    <option value="@cf/deepseek-ai/deepseek-r1-distill-qwen-32b">deepseek-r1-distill-qwen-32b</option>
-                </select>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#f7f8f4" />
+    <meta
+      name="description"
+      content="VEAIX：对话、阅读文件、理解图片与创作。由 Cloudflare Workers AI 驱动。"
+    />
+    <title>VEAIX · 想法，从这里开始</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/katex.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <button class="shade" id="shade" aria-label="关闭侧边栏" hidden></button>
+    <aside id="sidebar">
+      <a class="brand" href="/" aria-label="VEAIX 首页"
+        ><span class="brand-mark">v<span>✳</span></span
+        ><span>VEAIX</span></a
+      >
+      <button id="new-chat" class="new-chat">
+        <span>＋</span> 开启新对话 <kbd>⌘ K</kbd>
+      </button>
+      <div class="nav-caption">工作空间</div>
+      <button class="nav active" data-mode="chat">
+        <span>◈</span> 自由对话
+      </button>
+      <button class="nav" data-mode="image"><span>▧</span> 图片创作</button>
+      <div class="history-heading">
+        <span class="nav-caption">最近的对话</span
+        ><button
+          id="refresh-history"
+          title="刷新历史记录"
+          aria-label="刷新历史记录"
+        >
+          ↻
+        </button>
+      </div>
+      <div id="history">
+        <div class="history-empty">
+          给想法一个归处。<br />登录后，在这里继续之前的对话。
+        </div>
+      </div>
+      <div class="sidebar-bottom">
+        <div class="quota-card">
+          <span class="status-dot"></span> Cloudflare 免费额度<small
+            >聊天与图片共享每日额度<br />北京时间 08:00 重置</small
+          >
+        </div>
+        <button id="account" class="account">
+          <span class="avatar">↗</span
+          ><span id="account-label"
+            >登录保存对话<small>游客模式 · 不保留历史</small></span
+          ><span>→</span>
+        </button>
+      </div>
+    </aside>
+    <main>
+      <header>
+        <div class="header-left">
+          <button id="menu" class="icon-btn mobile" aria-label="打开侧边栏">
+            ☰</button
+          ><span id="workspace-label">自由对话</span
+          ><span class="header-divider"></span
+          ><span class="quiet">给每个想法，多一点可能</span>
+        </div>
+        <div class="header-actions">
+          <button id="export" class="text-btn" title="导出当前对话">
+            ↓ 导出</button
+          ><button id="theme" class="icon-btn" aria-label="切换深浅主题">
+            ◐
+          </button>
+        </div>
+      </header>
+      <section id="scroll-area">
+        <div id="welcome" class="welcome">
+          <h1>想法，<span>从这里开始。</span></h1>
+          <p id="welcome-description">
+            一起探索问题、梳理灵感，把好奇变成下一步。
+          </p>
+          <div class="suggestions">
+            <button data-prompt="请帮我把下面的想法整理成清晰、可执行的计划：">
+              <span>↗</span><strong>梳理一个想法</strong
+              ><small>让灵感落到纸面上</small></button
+            ><button
+              data-prompt="请用通俗的语言解释下面这个概念，并给出生活中的例子："
+            >
+              <span>⌘</span><strong>学懂一个概念</strong
+              ><small>复杂的事，简单说</small></button
+            ><button
+              data-prompt="请帮我检查下面的代码，解释问题并给出改进建议："
+            >
+              <span>〈/〉</span><strong>一起写点代码</strong
+              ><small>从思路到实现</small></button
+            ><button id="document-card">
+              <span>▤</span><strong>读懂一份文件</strong
+              ><small>上传、提问、提炼重点</small>
+            </button>
+          </div>
+          <div class="welcome-note">
+            <span>↳</span> 可以聊文字，也可以带上一张图片或一份文件。
+          </div>
+        </div>
+        <div id="messages" aria-live="polite" aria-relevant="additions"></div>
+      </section>
+      <div class="composer-area">
+        <div id="notice" role="status" hidden></div>
+        <div class="composer">
+          <div id="attachments"></div>
+          <textarea
+            id="input"
+            rows="2"
+            maxlength="30000"
+            aria-label="消息"
+            placeholder="有什么想一起探索的？"
+          ></textarea>
+          <div class="composer-tools">
+            <div class="tool-left">
+              <button
+                id="upload"
+                class="icon-btn"
+                aria-label="上传文件"
+                title="图片、PDF、TXT、Markdown、CSV 或代码文件"
+              >
+                ＋</button
+              ><span class="tool-divider"></span
+              ><label class="model-control"
+                ><span class="status-dot"></span
+                ><select id="model" aria-label="选择模型"></select></label
+              ><span id="image-model" hidden>FLUX.1 Schnell</span>
             </div>
-            <button id="source-toggle" class="ghost-btn" title="切换是否使用上游原始SSE（/api/chat/raw）">🌊 源SSE模式：关闭</button>
-            <button id="raw-toggle" class="ghost-btn" title="切换是否记录原始SSE流">📋 原始SSE：关闭</button>
+            <button id="send" class="send" aria-label="发送消息" disabled>
+              ↑
+            </button>
+          </div>
         </div>
-    </header>
-
-    <div class="chat-container">
-        <div id="chat-messages" class="chat-messages">
-            <div class="message assistant-message">
-                <p>Hi~ I'm an LLM chat app powered by Cloudflare Workers AI. How can I help you today?</p>
-            </div>
+        <div class="composer-caption">
+          <span id="privacy-note">游客对话不会保存，刷新即清空。</span
+          ><span>Enter 发送 · Shift + Enter 换行</span>
         </div>
-
-        <div class="typing-indicator" id="typing-indicator">AI is thinking...</div>
-
-        <div class="message-input">
-            <textarea id="user-input" placeholder="Type your message here..." rows="1" autofocus></textarea>
-            <button id="send-button">Send</button>
+        <div id="region-note" hidden>
+          当前地区已启用内容过滤，部分话题不可用。
         </div>
-    </div>
-
-    <!-- Markdown parser -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- Highlight.js for syntax highlighting -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <!-- MathJax for TeX math rendering -->
-    <script>
-        window.MathJax = {
-            tex: {
-                inlineMath: [['$', '$'], ['\\(', '\\)']],
-                displayMath: [['$$', '$$'], ['\\[', '\\]']],
-                processEscapes: true
-            },
-            options: {
-                skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
-            }
-        };
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" id="MathJax-script" async></script>
-    <!-- Chat app script -->
-    <script src="chat.js"></script>
-    <script>if (window.hljs) window.hljs.highlightAll();</script>
-</body>
+      </div>
+    </main>
+    <input
+      id="file"
+      type="file"
+      accept=".pdf,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.jpg,.jpeg,.png,.webp"
+      hidden
+    />
+    <dialog id="login-dialog">
+      <form id="login-form">
+        <button type="button" class="dialog-close" aria-label="关闭">×</button>
+        <div class="modal-mark">✳</div>
+        <h2>欢迎回到 VEAIX</h2>
+        <p>登录，让每次对话都有迹可循。</p>
+        <label
+          >邮箱<input
+            name="email"
+            type="email"
+            autocomplete="username"
+            required
+            placeholder="你的邮箱" /></label
+        ><label
+          >密码<input
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            placeholder="输入密码"
+        /></label>
+        <div id="login-error" role="alert"></div>
+        <button class="primary" type="submit">登录</button
+        ><small>目前仅向指定账户开放。游客仍可使用聊天与创作。</small>
+      </form>
+    </dialog>
+    <dialog id="account-dialog">
+      <div class="dialog-content">
+        <button class="dialog-close" aria-label="关闭">×</button>
+        <h2>你的空间</h2>
+        <p id="user-email"></p>
+        <p>
+          历史记录仅登录后可见。上传的内容会发送给模型用于本次回答；登录后的对话与附件内容会随会话保存。
+        </p>
+        <button id="logout" class="primary">退出登录</button>
+      </div>
+    </dialog>
+    <div id="toast" role="status" hidden></div>
+  </body>
 </html>

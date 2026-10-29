@@ -1,0 +1,14 @@
+node_modules/
+.wrangler/
+dist/
+.secrets.json
+.credentials.json
+.dev.vars
+.env*
+public/app.js
+public/vendor/
+public/fonts/
+public/katex.css
+test-output/
+.vs/
+design-scan.json

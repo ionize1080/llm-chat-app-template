@@ -1,146 +1,53 @@
-# LLM Chat Application Template
+# VEAIX
 
-A simple, ready-to-deploy chat application template powered by Cloudflare Workers AI. This template provides a clean starting point for building AI chat applications with streaming responses.
-
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/templates/tree/main/llm-chat-app-template)
-
-<!-- dash-content-start -->
-
-## Demo
-
-This template demonstrates how to build an AI-powered chat interface using Cloudflare Workers AI with streaming responses. It features:
-
-- Real-time streaming of AI responses using Server-Sent Events (SSE)
-- Easy customization of models and system prompts
-- Support for AI Gateway integration
-- Clean, responsive UI that works on mobile and desktop
+A Chinese-first private AI workspace at https://llm.veaix.com, built with Cloudflare Workers AI and D1.
 
 ## Features
 
-- 💬 Simple and responsive chat interface
-- ⚡ Server-Sent Events (SSE) for streaming responses
-- 🧠 Powered by Cloudflare Workers AI LLMs
-- 🛠️ Built with TypeScript and Cloudflare Workers
-- 📱 Mobile-friendly design
-- 🔄 Maintains chat history on the client
-- 📝 Supports Markdown formatting in assistant responses
-- 🎨 Syntax-highlighted code blocks with highlight.js
-<!-- dash-content-end -->
+- Streaming chat: GLM 4.7 Flash, Gemma 4, Qwen 3.8 27B and Qwen 3 30B.
+- FLUX.1 Schnell image generation; Gemma 4 / Qwen 3.8 image understanding.
+- Image, text, Markdown, CSV, code and PDF attachments. Files are limited to 10 MB; extracted text is limited to 24,000 characters / 40 PDF pages. Scanned PDFs require page images. Images are resized in the browser.
+- One permitted account: `ionize@163.com`. Passwords are salted PBKDF2 hashes stored as Worker secrets. Sessions use random tokens, hashed in D1, with Secure/HttpOnly/SameSite cookies and a 7-day expiry. Login attempts are limited.
+- Signed-in conversations are stored in D1; guests use memory only, with no localStorage/sessionStorage chat history. Only theme preference is saved locally.
+- Markdown, sanitized HTML, math rendering, stop/retry, copy, export and light/dark modes.
+- Original mainland-China system policy and exact keyword patterns retained. Region comes only from Cloudflare request.cf.country; user-controlled overrides were removed. Checks cover full text, attached documents, image prompts and images. CN requests additionally use Workers AI semantic screening; failures deny generation, and CN answers are checked before being returned. This region buffers answers for screening rather than streaming unchecked text.
 
-## Getting Started
+## Development
 
-### Prerequisites
+Node 22+ is required. This repository uses Wrangler and its pinned lockfile.
 
-- [Node.js](https://nodejs.org/) (v18 or newer)
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/)
-- A Cloudflare account with Workers AI access
-
-### Installation
-
-1. Clone this repository:
-
-   ```bash
-   git clone https://github.com/cloudflare/templates.git
-   cd templates/llm-chat-app
-   ```
-
-2. Install dependencies:
-
-   ```bash
-   npm install
-   ```
-
-3. Generate Worker type definitions:
-   ```bash
-   npm run cf-typegen
-   ```
-
-### Development
-
-Start a local development server:
-
-```bash
+```sh
+npm ci
+npm run cf-typegen
+npm test
+npm run check
 npm run dev
 ```
 
-This will start a local server at http://localhost:8787.
+`npm run build` bundles the UI and copies pinned local PDF/math assets; no third-party scripts are loaded at runtime. Wrangler runs this build automatically. Generated assets are excluded from Git.
 
-Note: Using Workers AI accesses your Cloudflare account even during local development, which will incur usage charges.
+Initialize an empty database only once:
 
-### Deployment
-
-Deploy to Cloudflare Workers:
-
-```bash
-npm run deploy
+```sh
+npx wrangler d1 execute veaix-chat --remote --file schema.sql
 ```
 
-## Project Structure
+The production D1 ID is configured in `wrangler.jsonc`. Set `AUTH_SALT` and `AUTH_HASH` through Cloudflare secrets before using login. To reset the password, generate a fresh random salt and derive a 32-byte PBKDF2-SHA256 hash using 100,000 iterations. Encode both the salt text and password as UTF-8; store the hash as lowercase hex. Upload only the salt and hash through a protected JSON file with `wrangler versions upload --secrets-file`, then deploy that version. Never commit a plaintext password, credential file, or Cloudflare token. Delete existing sessions to revoke all prior logins when resetting credentials.
 
-```
-/
-├── public/             # Static assets
-│   ├── index.html      # Chat UI HTML
-│   └── chat.js         # Chat UI frontend script
-├── src/
-│   ├── index.ts        # Main Worker entry point
-│   └── types.ts        # TypeScript type definitions
-├── test/               # Test files
-├── wrangler.jsonc      # Cloudflare Worker configuration
-├── tsconfig.json       # TypeScript configuration
-└── README.md           # This documentation
-```
+## Deployment
 
-## How It Works
+Cloudflare Workers Builds is connected to `ionize1080/llm-chat-app-template`, branch `main`, deploy command `npm run deploy`. Deployments retain existing Worker secrets. Run tests and packaging checks before pushing. Manual deployment uses `npm run deploy`.
 
-### Backend
+Baseline rollback version before this upgrade: `e0748e89-179d-4304-a025-a30e2c63b571`. Code rollback does not roll back D1 data. Restore compatible secrets and schema as necessary.
 
-The backend is built with Cloudflare Workers and uses the Workers AI platform to generate responses. The main components are:
+## Storage and limits
 
-1. **API Endpoint** (`/api/chat`): Accepts POST requests with chat messages and streams responses
-2. **Streaming**: Uses Server-Sent Events (SSE) for real-time streaming of AI responses
-3. **Workers AI Binding**: Connects to Cloudflare's AI service via the Workers AI binding
+The account's free Workers AI allocation is shared across all its applications: 10,000 Neurons per day, resetting at 00:00 UTC / 08:00 China and Singapore time. No paid model, paid plan, or external moderation service is enabled by this project. Model availability is verified against the Cloudflare catalog on 2026-10-29. The free account limit is the spending boundary; per-IP limits are additional abuse mitigation, not an exact global budget.
 
-### Frontend
+Guest uploads and generated images remain in the current page only. Logged-in text and upload content are included in saved conversations; generated images are private D1 media. History lists the 100 most recently updated conversations. A saved conversation is limited to 1.9 MB; save failures are visible and the current page stays available for export. Image output over 1.9 MB is temporary and must be downloaded. PDF text extraction is performed locally before extracted text is sent to Workers AI.
 
-The frontend is a simple HTML/CSS/JavaScript application that:
+## Verification
 
-1. Presents a chat interface
-2. Sends user messages to the API
-3. Processes streaming responses in real-time
-4. Maintains chat history on the client side
+`npm test` covers geographic spoofing, original topics, long/obfuscated content, cross-origin writes, guest history isolation, injected system roles, fail-closed semantic checks, image policy enforcement, request bounds and answer cleanup. `test/live-smoke.mjs URL` is an explicit live integration test requiring a local ignored `.credentials.json`; it exercises login, model calls, image generation and history CRUD using synthetic data. It consumes the existing free allocation.
 
-## Customization
-
-### Changing the Model
-
-To use a different AI model, update the `MODEL_ID` constant in `src/index.ts`. You can find available models in the [Cloudflare Workers AI documentation](https://developers.cloudflare.com/workers-ai/models/).
-
-### Using AI Gateway
-
-The template includes commented code for AI Gateway integration, which provides additional capabilities like rate limiting, caching, and analytics.
-
-To enable AI Gateway:
-
-1. [Create an AI Gateway](https://dash.cloudflare.com/?to=/:account/ai/ai-gateway) in your Cloudflare dashboard
-2. Uncomment the gateway configuration in `src/index.ts`
-3. Replace `YOUR_GATEWAY_ID` with your actual AI Gateway ID
-4. Configure other gateway options as needed:
-   - `skipCache`: Set to `true` to bypass gateway caching
-   - `cacheTtl`: Set the cache time-to-live in seconds
-
-Learn more about [AI Gateway](https://developers.cloudflare.com/ai-gateway/).
-
-### Modifying the System Prompt
-
-The default system prompt can be changed by updating the `SYSTEM_PROMPT` constant in `src/index.ts`.
-
-### Styling
-
-The UI styling is contained in the `<style>` section of `public/index.html`. You can modify the CSS variables at the top to quickly change the color scheme.
-
-## Resources
-
-- [Cloudflare Workers Documentation](https://developers.cloudflare.com/workers/)
-- [Cloudflare Workers AI Documentation](https://developers.cloudflare.com/workers-ai/)
-- [Workers AI Models](https://developers.cloudflare.com/workers-ai/models/)
+Design refinement follows [Impeccable](https://github.com/pbakaus/impeccable): a restrained Operate/Read interface, consistent SVG icons, local assets, visible focus and responsive layouts.
