@@ -1,250 +1,71 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width,initial-scale=1,viewport-fit=cover"
-    />
-    <meta name="theme-color" content="#f7f8f4" />
-    <meta
-      name="description"
-      content="VEAIX：对话、阅读文件、理解图片与创作。由 Cloudflare Workers AI 驱动。"
-    />
-    <title>VEAIX · 想法，从这里开始</title>
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/style.css" />
-    <link rel="stylesheet" href="/katex.css" />
-    <script type="module" src="/app.js"></script>
-  </head>
-  <body>
-    <button class="shade" id="shade" aria-label="关闭侧边栏" hidden></button>
-    <aside id="sidebar">
-      <a class="brand" href="/" aria-label="VEAIX 首页"
-        ><img
-          class="brand-mark"
-          src="/logo-mark.svg"
-          alt=""
-          width="40"
-          height="40" />
-        <img
-          class="brand-wordmark"
-          src="/logo-wordmark.svg"
-          alt="VEAIX"
-          width="116"
-          height="24"
-      /></a>
-      <button id="new-chat" class="new-chat">
-        <span>＋</span> 开启新对话 <kbd>⌘ K</kbd>
-      </button>
-      <div class="nav-caption">工作空间</div>
-      <button class="nav active" data-mode="chat">
-        <span>◈</span> 自由对话
-      </button>
-      <button class="nav" data-mode="image"><span>▧</span> 图片创作</button>
-      <div class="history-heading">
-        <span class="nav-caption">最近的对话</span
-        ><button
-          id="refresh-history"
-          title="刷新历史记录"
-          aria-label="刷新历史记录"
-        >
-          ↻
-        </button>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#fffaf5" />
+  <meta name="description" content="VEAIX：一个安静的 AI 工作空间。对话、阅读与创作，自由选择模型，连接自己的 API 密钥。" />
+  <title>VEAIX · 想法，从这里开始</title>
+  <link rel="icon" href="/logo-symbol.png" type="image/png" />
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/katex.css" />
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#input">跳到输入框</a>
+  <button class="shade" id="shade" aria-label="关闭侧边栏" hidden></button>
+  <aside id="sidebar" aria-label="工作空间导航">
+    <a class="brand" href="/" aria-label="VEAIX 首页"><img class="brand-mark" src="/logo-symbol.png" alt="" width="36" height="36" /><img class="brand-wordmark" src="/logo-wordmark.svg" alt="VEAIX" width="108" height="24" /></a>
+    <button id="new-chat" class="new-chat"><span></span>开启新对话<kbd>Ctrl K</kbd></button>
+    <nav class="workspace-nav" aria-label="创作工具"><button class="nav active" data-mode="chat"><span></span>自由对话</button><button class="nav" data-mode="image"><span></span>图片创作</button><button class="nav" id="browse-models"><span data-icon="models"></span>模型库<span id="model-count" class="nav-count"></span></button></nav>
+    <div class="history-heading"><span>最近的对话</span><button id="refresh-history" class="icon-btn" title="刷新历史记录" aria-label="刷新历史记录"></button></div>
+    <label class="history-search"><span data-icon="search"></span><input id="history-search" type="search" placeholder="搜索对话" aria-label="搜索历史对话" /></label>
+    <div id="history"><div class="history-empty">给想法一个归处。<br />登录后，在这里继续之前的对话。</div></div>
+    <div class="sidebar-bottom">
+      <button id="keys-open" class="connection-link"><span data-icon="key"></span><span>连接你的模型<small>保存 API 密钥 · BYOK</small></span><span data-icon="arrow"></span></button>
+      <div class="quota-card"><span class="status-dot"></span>普通模型 · 免费额度<small>付费模型登录后可用</small></div>
+      <button id="account" class="account"><span class="avatar"></span><span id="account-label">登录保存对话<small>游客模式 · 不保留历史</small></span><span data-icon="chevron"></span></button>
+    </div>
+  </aside>
+  <main>
+    <header><div class="header-left"><button id="menu" class="icon-btn mobile" aria-label="打开侧边栏"></button><span id="workspace-label">自由对话</span><span class="header-divider"></span><span class="quiet">给每个想法，多一点可能</span></div><div class="header-actions"><span class="workspace-status"><span class="status-dot"></span><span id="session-status">临时对话</span></span><button id="export" class="text-btn" title="导出当前对话"></button><button id="theme" class="icon-btn" aria-label="切换深浅主题" title="切换深浅主题"></button></div></header>
+    <section id="scroll-area" aria-label="对话内容">
+      <div id="welcome" class="welcome"><img class="welcome-mark" src="/logo-symbol.png" width="44" height="44" alt="" /><h1>想法，<span>从这里开始。</span></h1><p id="welcome-description">一起探索问题、梳理灵感，把好奇变成下一步。</p>
+        <div class="suggestions"><button data-prompt="请帮我把下面的想法整理成清晰、可执行的计划："><span></span><strong>梳理一个想法</strong><small>让灵感落到纸面上</small></button><button data-prompt="请用通俗的语言解释下面这个概念，并给出生活中的例子："><span></span><strong>学懂一个概念</strong><small>复杂的事，简单说</small></button><button data-prompt="请帮我检查下面的代码，解释问题并给出改进建议："><span></span><strong>一起写点代码</strong><small>从思路到实现</small></button><button id="document-card"><span></span><strong>读懂一份文件</strong><small>上传、提问、提炼重点</small></button></div>
+        <div class="welcome-note">可以聊文字，也可以带上一张图片或一份文件。</div>
       </div>
-      <div id="history">
-        <div class="history-empty">
-          给想法一个归处。<br />登录后，在这里继续之前的对话。
-        </div>
-      </div>
-      <div class="sidebar-bottom">
-        <div class="quota-card">
-          <span class="status-dot"></span> 普通模型 · 免费额度<small
-            >登录可用联网与付费模型<br />每日限额北京时间 08:00 重置</small
-          >
-        </div>
-        <button id="account" class="account">
-          <span class="avatar">↗</span
-          ><span id="account-label"
-            >登录保存对话<small>游客模式 · 不保留历史</small></span
-          ><span>→</span>
-        </button>
-      </div>
-    </aside>
-    <main>
-      <header>
-        <div class="header-left">
-          <button id="menu" class="icon-btn mobile" aria-label="打开侧边栏">
-            ☰</button
-          ><span id="workspace-label">自由对话</span
-          ><span class="header-divider"></span
-          ><span class="quiet">给每个想法，多一点可能</span>
-        </div>
-        <div class="header-actions">
-          <button id="export" class="text-btn" title="导出当前对话">
-            ↓ 导出</button
-          ><button id="theme" class="icon-btn" aria-label="切换深浅主题">
-            ◐
-          </button>
-        </div>
-      </header>
-      <section id="scroll-area">
-        <div id="welcome" class="welcome">
-          <h1>想法，<span>从这里开始。</span></h1>
-          <p id="welcome-description">
-            一起探索问题、梳理灵感，把好奇变成下一步。
-          </p>
-          <div class="suggestions">
-            <button data-prompt="请帮我把下面的想法整理成清晰、可执行的计划：">
-              <span>↗</span><strong>梳理一个想法</strong
-              ><small>让灵感落到纸面上</small></button
-            ><button
-              data-prompt="请用通俗的语言解释下面这个概念，并给出生活中的例子："
-            >
-              <span>⌘</span><strong>学懂一个概念</strong
-              ><small>复杂的事，简单说</small></button
-            ><button
-              data-prompt="请帮我检查下面的代码，解释问题并给出改进建议："
-            >
-              <span>〈/〉</span><strong>一起写点代码</strong
-              ><small>从思路到实现</small></button
-            ><button id="document-card">
-              <span>▤</span><strong>读懂一份文件</strong
-              ><small>上传、提问、提炼重点</small>
-            </button>
-          </div>
-          <div class="welcome-note">
-            <span>↳</span> 可以聊文字，也可以带上一张图片或一份文件。
-          </div>
-        </div>
-        <div id="messages" aria-live="polite" aria-relevant="additions"></div>
-      </section>
-      <div class="composer-area">
-        <div id="notice" role="status" hidden></div>
-        <div class="composer">
-          <div id="attachments"></div>
-          <textarea
-            id="input"
-            rows="2"
-            maxlength="30000"
-            aria-label="消息"
-            placeholder="有什么想一起探索的？"
-          ></textarea>
-          <div class="composer-tools">
-            <div class="tool-left">
-              <button
-                id="upload"
-                class="icon-btn"
-                aria-label="上传文件"
-                title="图片、PDF、TXT、Markdown、CSV 或代码文件"
-              >
-                ＋</button
-              ><span class="tool-divider"></span>
-              <div class="model-control">
-                <select
-                  id="model"
-                  hidden
-                  aria-hidden="true"
-                  tabindex="-1"
-                ></select>
-                <button
-                  id="model-trigger"
-                  aria-haspopup="listbox"
-                  aria-expanded="false"
-                  aria-controls="model-picker"
-                >
-                  <span class="status-dot"></span
-                  ><span id="model-label">选择模型</span
-                  ><span data-icon="chevron"></span>
-                </button>
-                <div id="model-picker" class="model-picker" hidden>
-                  <div class="picker-heading">选择适合这一刻的模型</div>
-                  <div
-                    id="model-options"
-                    role="listbox"
-                    aria-label="选择模型"
-                  ></div>
-                  <p class="picker-note">
-                    普通模型使用免费额度。付费模型从站点余额扣费。
-                  </p>
-                  <button id="model-login" class="text-btn" hidden>
-                    登录解锁高级模型
-                  </button>
-                </div>
-              </div>
-              <span id="image-model" hidden>FLUX.1 Schnell</span>
-              <button
-                id="web-search"
-                class="search-toggle"
-                aria-pressed="false"
-                title="联网搜索 · 登录专属"
-              >
-                <span data-icon="globe"></span><span>联网</span>
-              </button>
+      <div id="messages" aria-live="polite" aria-relevant="additions"></div>
+    </section>
+    <div class="composer-area"><button id="scroll-bottom" class="scroll-bottom icon-btn" aria-label="回到最新消息" title="回到最新消息" hidden><span data-icon="down"></span></button><div id="notice" role="status" hidden></div>
+      <div class="composer"><div id="attachments"></div><textarea id="input" rows="2" maxlength="30000" aria-label="消息" placeholder="有什么想一起探索的？"></textarea>
+        <div class="composer-tools"><div class="tool-left"><button id="upload" class="icon-btn" aria-label="上传文件" title="图片、PDF、TXT、Markdown、CSV 或代码文件"></button><span class="tool-divider"></span>
+          <div class="model-control"><select id="model" hidden aria-hidden="true" tabindex="-1"></select><button id="model-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="model-picker"><span class="status-dot"></span><span id="model-label">选择模型</span><span data-icon="chevron"></span></button>
+            <div id="model-picker" class="model-picker" role="dialog" aria-label="选择模型" hidden>
+              <div class="picker-heading"><div><strong>选择模型</strong><small id="catalog-status">正在连接模型目录…</small></div><button id="models-refresh" class="icon-btn" title="刷新模型目录" aria-label="刷新模型目录"><span data-icon="refresh"></span></button><button id="models-close" class="icon-btn" aria-label="关闭模型选择"><span data-icon="close"></span></button></div>
+              <label class="model-search"><span data-icon="search"></span><input id="model-search" type="search" placeholder="搜索模型、厂商或能力" aria-label="搜索模型" autocomplete="off" /><kbd>Esc</kbd></label>
+              <div class="model-filters"><div class="segmented" role="group" aria-label="模型范围"><button data-model-scope="all" aria-pressed="true">全部</button><button data-model-scope="ready" aria-pressed="false">可用</button><button data-model-scope="vision" aria-pressed="false">视觉</button></div><select id="provider-filter" aria-label="按服务商筛选"><option value="all">所有服务商</option></select></div>
+              <div id="model-results" class="model-results"></div><div id="model-options" role="listbox" aria-label="模型列表"></div>
+              <div class="picker-footer"><p class="picker-note">价格为每百万 token 的美元参考价。</p><button id="model-login" class="text-btn" hidden>登录解锁</button><button id="model-keys" class="text-btn"><span data-icon="key"></span>管理密钥</button></div>
             </div>
-            <button id="send" class="send" aria-label="发送消息" disabled>
-              ↑
-            </button>
-          </div>
-        </div>
-        <div class="composer-caption">
-          <span id="privacy-note">游客对话不会保存，刷新即清空。</span
-          ><span>Enter 发送 · Shift + Enter 换行</span>
-        </div>
-        <div id="region-note" hidden>
-          当前地区已启用内容过滤，部分话题不可用。
-        </div>
+          </div><span id="image-model" hidden>FLUX.1 Schnell</span><button id="web-search" class="search-toggle" aria-pressed="false" title="联网搜索 · 登录专属"><span data-icon="globe"></span><span>联网</span></button>
+        </div><button id="send" class="send" aria-label="发送消息" disabled></button></div>
       </div>
-    </main>
-    <input
-      id="file"
-      type="file"
-      accept=".pdf,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.jpg,.jpeg,.png,.webp"
-      hidden
-    />
-    <dialog id="login-dialog">
-      <form id="login-form">
-        <button type="button" class="dialog-close" aria-label="关闭">×</button>
-        <img
-          class="modal-mark"
-          src="/logo-mark.svg"
-          alt=""
-          width="48"
-          height="48"
-        />
-        <h2>欢迎回到 VEAIX</h2>
-        <p>登录，让每次对话都有迹可循。</p>
-        <label
-          >邮箱<input
-            name="email"
-            type="email"
-            autocomplete="username"
-            required
-            placeholder="你的邮箱" /></label
-        ><label
-          >密码<input
-            name="password"
-            type="password"
-            autocomplete="current-password"
-            required
-            placeholder="输入密码"
-        /></label>
-        <div id="login-error" role="alert"></div>
-        <button class="primary" type="submit">登录</button
-        ><small>目前仅向指定账户开放。游客仍可使用聊天与创作。</small>
-      </form>
-    </dialog>
-    <dialog id="account-dialog">
-      <div class="dialog-content">
-        <button class="dialog-close" aria-label="关闭">×</button>
-        <h2>你的空间</h2>
-        <p id="user-email"></p>
-        <p>
-          历史记录仅登录后可见。上传的内容会发送给模型用于本次回答；登录后的对话与附件内容会随会话保存。
-        </p>
-        <button id="logout" class="primary">退出登录</button>
-      </div>
-    </dialog>
-    <div id="toast" role="status" hidden></div>
-  </body>
+      <div class="composer-caption"><span id="privacy-note">游客对话不会保存，刷新即清空。</span><span>Enter 发送 · Shift + Enter 换行</span></div><div id="region-note" hidden>当前地区启用内容过滤，部分话题不可用。</div>
+    </div>
+  </main>
+  <input id="file" type="file" accept=".pdf,.txt,.md,.csv,.json,.js,.ts,.py,.html,.css,.xml,.yaml,.yml,.log,.jpg,.jpeg,.png,.webp" hidden />
+  <dialog id="login-dialog" aria-labelledby="login-title"><form id="login-form"><button type="button" class="dialog-close icon-btn" aria-label="关闭"><span data-icon="close"></span></button><img class="modal-mark" src="/logo-symbol.png" alt="" width="44" height="44" /><h2 id="login-title">欢迎回到 VEAIX</h2><p>让对话延续，让喜欢的模型随时就绪。</p><label>邮箱<input name="email" type="email" autocomplete="username" required placeholder="你的邮箱" /></label><label>密码<input name="password" type="password" autocomplete="current-password" required placeholder="输入密码" /></label><div id="login-error" role="alert"></div><button class="primary" type="submit">登录</button><small>目前仅向指定账户开放。游客也可以使用普通模型与图片创作。</small></form></dialog>
+  <dialog id="account-dialog" aria-labelledby="account-title"><div class="dialog-content"><button class="dialog-close icon-btn" aria-label="关闭"><span data-icon="close"></span></button><span class="account-dialog-icon" data-icon="user"></span><h2 id="account-title">你的空间</h2><p id="user-email"></p><button id="account-keys" class="settings-row"><span data-icon="key"></span><span>模型与 API 密钥<small>管理已保存的连接</small></span><span data-icon="arrow"></span></button><p class="account-privacy">历史记录仅登录后可见。上传内容会发送给所选模型用于回答；登录后的对话与附件内容随会话保存。</p><button id="logout" class="secondary full-width">退出登录</button></div></dialog>
+  <dialog id="keys-dialog" class="keys-dialog" aria-labelledby="keys-title">
+    <div class="keys-header"><div><h2 id="keys-title">连接你的模型</h2><p>使用自己的 API 密钥，选择适合你的智能。</p></div><button class="dialog-close icon-btn" aria-label="关闭密钥设置"><span data-icon="close"></span></button></div>
+    <div class="keys-layout"><nav id="key-providers" aria-label="密钥服务商"></nav><section class="key-detail" aria-live="polite">
+      <div class="key-provider-heading"><span id="key-provider-symbol" class="provider-symbol"></span><div><h3 id="key-provider-name">OpenRouter</h3><p id="key-provider-purpose">一个连接，访问多个模型家族</p></div></div>
+      <div id="key-saved" class="key-saved" hidden><span data-icon="check"></span><div><strong id="key-mask"></strong><small id="key-saved-time"></small></div><span class="connection-state">已连接</span></div>
+      <form id="key-form"><label for="api-key">API 密钥</label><div class="secret-input"><input id="api-key" name="key" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴你的 API 密钥" maxlength="2048" /><button id="key-reveal" type="button" class="icon-btn" aria-label="显示密钥" aria-pressed="false"><span data-icon="eye"></span></button></div><p class="field-help" id="key-input-help">密钥将加密保存在你的账户，下次登录可继续使用。</p><a id="key-provider-link" class="provider-doc-link" target="_blank" rel="noopener noreferrer">获取 API 密钥<span data-icon="external"></span></a><div id="key-feedback" role="status" hidden></div><div class="key-form-actions"><button id="key-verify" type="button" class="secondary">验证连接</button><button id="key-save" type="submit" class="primary">保存并连接</button></div></form>
+      <div class="key-delete-row" id="key-delete-row" hidden><button id="key-delete" class="danger-btn">移除已保存的密钥</button><div id="key-delete-confirm" hidden><p>移除后，此服务商的模型需要重新连接才能使用。</p><button id="key-delete-cancel" class="secondary">取消</button><button id="key-delete-yes" class="danger-btn">确认移除</button></div></div>
+      <div class="key-security"><span data-icon="shield"></span><p>明文密钥不会保存在浏览器。请求经本站服务器转发至所选服务商，API 费用由你的服务商账户承担。聊天订阅不等同于 API 额度。</p></div>
+    </section></div>
+  </dialog>
+  <div id="toast" role="status" hidden></div>
+</body>
 </html>

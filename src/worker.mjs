@@ -8,6 +8,9 @@ import {
 } from "./shared.mjs";
 import { CN_SYSTEM_PROMPT, forbidden } from "./moderation.mjs";
 import { webSearch, searchContext, dailyAllowance } from "./search.mjs";
+import { builtinModels, getCatalog, parseRemoteModel, resolveRemoteModel, clearProviderCatalog } from "./catalog.mjs";
+import { listKeys, saveKey, verifyKey, deleteKey, storageAvailable } from "./byok.mjs";
+import { runProvider } from "./providers.mjs";
 const EMAIL = "ionize@163.com";
 const json = (data, status = 200, headers = {}) =>
   Response.json(data, {
@@ -200,12 +203,16 @@ async function chat(request, env, ip, user) {
   await rate(env.RATE, ip);
   const b = await readJSON(request);
   const messages = validMessages(b.messages);
-  const model = b.model ? MODELS.find((m) => m.id === b.model) : MODELS[0];
+  const remoteId = parseRemoteModel(b.model);
+  if (remoteId && !user)
+    return json({ error: "外部模型仅限登录用户使用，请先登录并配置 API Key。" }, 403);
+  const remote = remoteId ? await resolveRemoteModel(env, EMAIL, b.model, request.signal) : null;
+  const model = remote?.model || (b.model ? MODELS.find((m) => m.id === b.model) : MODELS[0]);
   if (!model) return json({ error: "模型不存在，请刷新页面。" }, 400);
   if ((model.paid || b.search === true) && !user)
     return json({ error: "联网搜索和付费模型仅限登录用户使用。" }, 403);
   if (messages.some((m) => m.image) && !model.vision)
-    return json({ error: "请使用 Gemma 4 或 Qwen 3.8 阅读图片。" }, 400);
+    return json({ error: "当前模型不支持图片，请选择标有「识图」的模型。" }, 400);
   const cn = isCN(request);
   if (cn && !(await moderate(env, messages))) return sseText(REFUSAL);
   let sources = [];
@@ -228,9 +235,13 @@ async function chat(request, env, ip, user) {
   const options = model.paid
     ? { gateway: { id: env.AI_GATEWAY_ID, skipCache: true } }
     : {};
-  if (model.paid) await dailyAllowance(env, "premium", 100);
+  if (model.paid && !remote) await dailyAllowance(env, "premium", 100);
+  if (remote) await dailyAllowance(env, "byok", 500);
   if (cn) {
-    const result = await env.AI.run(
+    const result = remote ? await runProvider(
+      model, remote.key, params(model.id, messages, true, false, sources).messages,
+      { stream: false, signal: request.signal },
+    ) : await env.AI.run(
       model.id,
       params(model.id, messages, true, false, sources),
       options,
@@ -244,7 +255,10 @@ async function chat(request, env, ip, user) {
       return sseText(REFUSAL);
     return sseText(answer, sources);
   }
-  const stream = await env.AI.run(
+  const stream = remote ? await runProvider(
+    model, remote.key, params(model.id, messages, false, true, sources).messages,
+    { stream: true, signal: request.signal },
+  ) : await env.AI.run(
     model.id,
     params(model.id, messages, false, true, sources),
     options,
@@ -346,8 +360,37 @@ export default {
         return json({
           email: user ? EMAIL : null,
           restricted: isCN(request),
-          models: MODELS,
+          models: builtinModels(),
         });
+      if (path === "/api/models" && request.method === "GET") {
+        const refresh = url.searchParams.get("refresh") === "1";
+        if (refresh) await rate(env.RATE, "catalog:" + ip);
+        return json(await getCatalog(env, user ? EMAIL : null, refresh, request.signal));
+      }
+      if (path === "/api/keys" || path.startsWith("/api/keys/")) {
+        if (!user) return json({ error: "请先登录后管理 API Key。" }, 401);
+        if (path === "/api/keys" && request.method === "GET")
+          return json({ keys: await listKeys(env, EMAIL), storageAvailable: storageAvailable(env) });
+        await rate(env.LOGIN_RATE, "byok:" + ip);
+        if (path === "/api/keys" && request.method === "PUT") {
+          const body = await readJSON(request, 8192);
+          const result = await saveKey(env, EMAIL, body.provider, body.key, request.signal);
+          clearProviderCatalog(EMAIL, body.provider);
+          return json(result);
+        }
+        if (path === "/api/keys/verify" && request.method === "POST") {
+          const body = await readJSON(request, 8192);
+          const result = await verifyKey(env, EMAIL, body.provider, body.key, request.signal);
+          return json({ ok: true, modelCount: result.models.length, verifiedAt: result.verifiedAt });
+        }
+        if (request.method === "DELETE" && /^\/api\/keys\/[a-z]+$/.test(path)) {
+          const provider = path.split("/")[3];
+          const result = await deleteKey(env, EMAIL, provider);
+          clearProviderCatalog(EMAIL, provider);
+          return json(result);
+        }
+        return json({ error: "密钥管理接口不存在。" }, 404);
+      }
       if (path === "/api/logout" && request.method === "POST") {
         if (user)
           await env.DB.prepare("DELETE FROM sessions WHERE hash=?")
@@ -425,7 +468,7 @@ export default {
                   title,
                   messages: b.messages,
                   mode: b.mode === "image" ? "image" : "chat",
-                  model: MODELS.some((m) => m.id === b.model)
+                  model: MODELS.some((m) => m.id === b.model) || parseRemoteModel(b.model)
                     ? b.model
                     : MODELS[0].id,
                 }),

@@ -27,7 +27,7 @@
   "scripts": {
     "cf-typegen": "wrangler types",
     "check": "tsc --noEmit && wrangler deploy --dry-run",
-    "deploy": "wrangler deploy",
+    "deploy": "npm test && node deploy.mjs",
     "dev": "wrangler dev",
     "start": "wrangler dev",
     "test": "node --test test/*.test.mjs",

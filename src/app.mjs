@@ -1,4 +1,5 @@
 import { icon } from "./icons.mjs";
+import { initModelHub } from "./model-ui.mjs";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import renderMath from "katex/contrib/auto-render";
@@ -16,6 +17,8 @@ let user = null,
   history = [],
   loadingFile = false;
 let useSearch = false;
+let modelHub;
+let authEpoch = 0, historyRequestEpoch = 0, historyListEpoch = 0;
 const input = $("#input"),
   send = $("#send"),
   modelSelect = $("#model"),
@@ -43,7 +46,9 @@ async function api(path, options = {}) {
     const b = await r
       .json()
       .catch(() => ({ error: "网络连接异常，请稍后重试。" }));
-    throw new Error(b.error || "请求失败");
+    const error = new Error(b.error || "请求失败");
+    error.status = r.status;
+    throw error;
   }
   return r;
 }
@@ -59,6 +64,8 @@ function enable() {
   modelSelect.disabled = busy;
   $("#model-trigger").disabled = busy;
   $("#web-search").disabled = busy;
+  $("#browse-models").disabled = busy;
+  $("#keys-open").disabled = busy;
   document
     .querySelectorAll("[data-mode],#new-chat")
     .forEach((e) => (e.disabled = busy));
@@ -141,6 +148,7 @@ function setMode(next) {
 }
 function reset(next = mode) {
   if (busy) return;
+  historyRequestEpoch++;
   messages = [];
   id = crypto.randomUUID();
   attachment = null;
@@ -181,6 +189,7 @@ function renderAttachment() {
 }
 function render() {
   $("#welcome").hidden = messages.length > 0;
+  document.body.classList.toggle("has-messages", messages.length > 0);
   const root = $("#messages");
   root.replaceChildren();
   for (const [index, m] of messages.entries()) {
@@ -328,7 +337,15 @@ function paintHistory() {
     root.append(empty);
     return;
   }
-  for (const h of history) {
+  const query = $("#history-search").value.trim().toLowerCase();
+  const visibleHistory = history.filter(h => !query || String(h.title).toLowerCase().includes(query));
+  if (!visibleHistory.length) {
+    const empty = document.createElement("div");
+    empty.className = "history-empty";
+    empty.textContent = "没有找到相关对话，试试其他关键词。";
+    root.append(empty);
+  }
+  for (const h of visibleHistory) {
     const row = document.createElement("div");
     row.className = "history-row" + (h.id === id ? " selected" : "");
     const open = document.createElement("button");
@@ -336,8 +353,10 @@ function paintHistory() {
     open.title = h.title;
     open.onclick = async () => {
       if (busy) return;
+      const owner = user, auth = authEpoch, request = ++historyRequestEpoch;
       try {
         const b = await (await api("/api/history/" + h.id)).json();
+        if (!user || owner !== user || auth !== authEpoch || request !== historyRequestEpoch) return;
         id = h.id;
         messages = b.messages;
         modelSelect.value = b.model;
@@ -349,7 +368,7 @@ function paintHistory() {
         sidebar(false);
         scrollEnd();
       } catch (e) {
-        toast(e.message);
+        if (owner === user && auth === authEpoch && request === historyRequestEpoch) toast(e.message);
       }
     };
     const del = document.createElement("button");
@@ -371,16 +390,19 @@ function paintHistory() {
   }
 }
 async function refreshHistory() {
+  const owner = user, auth = authEpoch, request = ++historyListEpoch;
   if (!user) {
     history = [];
     paintHistory();
     return;
   }
   try {
-    history = await (await api("/api/history")).json();
+    const incoming = await (await api("/api/history")).json();
+    if (!user || owner !== user || auth !== authEpoch || request !== historyListEpoch) return;
+    history = incoming;
     paintHistory();
   } catch (e) {
-    toast(e.message);
+    if (owner === user && auth === authEpoch && request === historyListEpoch) toast(e.message);
   }
 }
 async function save() {
@@ -397,6 +419,7 @@ async function save() {
   }
 }
 function account() {
+  $("#session-status").textContent = user ? "账户已连接" : "临时对话";
   $("#account-label").replaceChildren();
   const label = document.createElement("span");
   label.textContent = user ? "Ionize 的空间" : "登录保存对话";
@@ -409,6 +432,7 @@ function account() {
 }
 async function generate(retry = false) {
   if (busy || loadingFile) return;
+  historyRequestEpoch++;
   const text = input.value.trim();
   if (!retry && !text && !attachment) return;
   showNotice();
@@ -464,7 +488,7 @@ async function generate(retry = false) {
         .slice(-24);
       while (context.length > 1 && context[0].role !== "user") context.shift();
       if (context.some((m) => m.image) && !selected.vision)
-        throw new Error("这段对话包含图片，请切换 Gemma 4 或 Qwen 3.8。");
+        throw new Error("这段对话包含图片，请选择标有「视觉」的模型。");
       const r = await api("/api/chat", {
         method: "POST",
         body: JSON.stringify({
@@ -506,6 +530,7 @@ async function generate(retry = false) {
           );
         response.content += extractText(obj);
         if (Array.isArray(obj.sources)) response.sources = obj.sources;
+        if (obj.warning) showNotice(String(obj.warning));
         if (obj.choices?.[0]?.finish_reason) {
           ended = true;
           if (obj.choices[0].finish_reason === "length")
@@ -656,7 +681,6 @@ async function readFile(file) {
     showNotice(e.message);
   } finally {
     loadingFile = false;
-    let useSearch = false;
     $("#file").value = "";
     enable();
   }
@@ -714,17 +738,22 @@ $("#login-form").onsubmit = async (e) => {
   const button = form.querySelector("[type=submit]");
   button.disabled = true;
   $("#login-error").textContent = "";
+  const auth = ++authEpoch;
+  historyRequestEpoch++;
+  historyListEpoch++;
   try {
     const data = Object.fromEntries(new FormData(form));
     const b = await (
       await api("/api/login", { method: "POST", body: JSON.stringify(data) })
     ).json();
+    if (auth !== authEpoch) return;
     user = b.email;
     form.reset();
     $("#login-dialog").close();
     reset();
     account();
     paintModel();
+    await modelHub.authChanged();
     await refreshHistory();
     toast("登录成功");
   } catch (err) {
@@ -734,8 +763,12 @@ $("#login-form").onsubmit = async (e) => {
   }
 };
 $("#logout").onclick = async () => {
+  const auth = ++authEpoch;
+  historyRequestEpoch++;
+  historyListEpoch++;
   try {
     await api("/api/logout", { method: "POST", body: "{}" });
+    if (auth !== authEpoch) return;
     user = null;
     useSearch = false;
     $("#web-search").setAttribute("aria-pressed", "false");
@@ -746,6 +779,7 @@ $("#logout").onclick = async () => {
     account();
     paintModel();
     paintHistory();
+    await modelHub.authChanged();
   } catch (e) {
     toast(e.message);
   }
@@ -796,6 +830,11 @@ document.addEventListener("drop", (e) => {
   if (mode === "chat") readFile(e.dataTransfer.files[0]);
 });
 async function init() {
+  const auth = authEpoch;
+  // The composer must remain usable even when session discovery is slow or
+  // superseded by an unsuccessful login attempt.
+  modelSelect.replaceChildren(...models.map((m) => new Option(m.name, m.id)));
+  void modelHub.refresh();
   setMode(
     new URL(location.href).searchParams.get("mode") === "image"
       ? "image"
@@ -803,21 +842,24 @@ async function init() {
   );
   try {
     const b = await (await api("/api/me")).json();
+    if (auth !== authEpoch) return;
     user = b.email;
     models = b.models;
     $("#region-note").hidden = !b.restricted;
   } catch {
+    if (auth !== authEpoch) return;
     showNotice("暂时无法连接服务，请刷新重试。");
   }
   modelSelect.replaceChildren(
     ...models.map((m) => {
       const o = document.createElement("option");
       o.value = m.id;
-      o.textContent = m.name + " · " + m.note.split(" · ")[0];
+      o.textContent = m.name;
       return o;
     }),
   );
   account();
+  await modelHub.refresh();
   await refreshHistory();
   setMode(mode);
   enable();
@@ -843,67 +885,9 @@ document
   .querySelectorAll("[data-icon]")
   .forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
 $("#export").innerHTML = icon("download") + "<span>导出</span>";
-$("#model-trigger").onclick = () => {
-  if (!$("#model-picker").hidden) return closePicker();
-  paintModel();
-  $("#model-picker").hidden = false;
-  $("#model-trigger").setAttribute("aria-expanded", "true");
-  (
-    $("#model-options [aria-selected=true]") ||
-    $("#model-options button:not(:disabled)")
-  )?.focus();
-};
-function closePicker(focus = false) {
-  $("#model-picker").hidden = true;
-  $("#model-trigger").setAttribute("aria-expanded", "false");
-  if (focus) $("#model-trigger").focus();
-}
-function paintModel() {
-  let selected = models.find((m) => m.id === modelSelect.value) || models[0];
-  if (selected.paid && !user) {
-    selected = models[0];
-    modelSelect.value = selected.id;
-  }
-  $("#model-label").textContent = selected.name;
-  $("#model-trigger").title = selected.name + " · " + selected.note;
-  const root = $("#model-options");
-  root.replaceChildren();
-  for (const paid of [false, true]) {
-    const group = document.createElement("div");
-    group.setAttribute("role", "group");
-    group.setAttribute(
-      "aria-label",
-      paid ? "登录专属 · 付费" : "普通模型 · 免费额度",
-    );
-    const heading = document.createElement("div");
-    heading.className = "model-group-label";
-    heading.textContent = group.getAttribute("aria-label");
-    group.append(heading);
-    for (const m of models.filter((m) => !!m.paid === paid)) {
-      const option = document.createElement("button");
-      option.type = "button";
-      option.setAttribute("role", "option");
-      option.setAttribute("aria-selected", String(m.id === selected.id));
-      option.disabled = paid && !user;
-      option.innerHTML = `<span class="model-option-copy"><strong>${escape(m.name)}</strong><small>${escape(m.note.split(" · ")[0])}${m.vision ? " · 可看图" : ""}</small></span><span class="model-option-status">${paid && !user ? icon("lock") : m.id === selected.id ? icon("check") : paid ? "付费" : ""}</span>`;
-      option.onclick = () => {
-        modelSelect.value = m.id;
-        paintModel();
-        closePicker(true);
-      };
-      group.append(option);
-    }
-    root.append(group);
-  }
-  $("#model-login").hidden = !!user;
-  $("#web-search").title = user
-    ? "联网搜索 · 消耗站点付费余额"
-    : "登录后使用联网搜索";
-}
-$("#model-login").onclick = () => {
-  closePicker();
-  $("#login-dialog").showModal();
-};
+modelHub = initModelHub({ api, getUser: () => user, getModels: () => models, setModels: value => { models = value; }, getBusy: () => busy, toast, openSidebar: sidebar });
+function paintModel() { modelHub?.render(); }
+function closePicker(focus = false) { modelHub?.close(focus); }
 $("#web-search").onclick = () => {
   if (!user) {
     $("#login-dialog").showModal();
@@ -913,39 +897,11 @@ $("#web-search").onclick = () => {
   $("#web-search").setAttribute("aria-pressed", String(useSearch));
   toast(useSearch ? "已开启联网搜索 · 使用站点付费余额" : "已关闭联网搜索");
 };
-$("#model-picker").addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    e.preventDefault();
-    closePicker(true);
-    return;
-  }
-  const options = [
-    ...document.querySelectorAll("#model-options button:not(:disabled)"),
-  ];
-  const i = options.indexOf(document.activeElement);
-  const next =
-    e.key === "ArrowDown"
-      ? (i + 1) % options.length
-      : e.key === "ArrowUp"
-        ? (i - 1 + options.length) % options.length
-        : e.key === "Home"
-          ? 0
-          : e.key === "End"
-            ? options.length - 1
-            : -1;
-  if (next >= 0) {
-    e.preventDefault();
-    options[next].focus();
-  }
-});
-document.addEventListener("pointerdown", (e) => {
-  if (!e.target.closest(".model-control")) closePicker();
-});
-document.addEventListener("focusin", (e) => {
-  if (!e.target.closest(".model-control")) closePicker();
-});
 matchMedia("(max-width:760px)").addEventListener("change", () =>
   sidebar(false),
 );
+$("#history-search").oninput = paintHistory;
+$("#scroll-bottom").onclick = scrollEnd;
+scroll.addEventListener("scroll", () => { $("#scroll-bottom").hidden = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 180 || !messages.length; }, {passive:true});
 sidebar(false);
 init();
